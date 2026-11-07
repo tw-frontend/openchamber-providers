@@ -57,3 +57,123 @@ export const parseModelIDs = (payload: unknown): string[] => {
   }
   return ids;
 };
+
+/* -------------------------------------------------------------- router endpoints */
+
+/**
+ * One provider endpoint serving a model, normalised from the OpenRouter
+ * catalog. Numbers the panel formats (prices per token, throughput, latency)
+ * stay nullable: the catalog omits them when nothing was measured yet.
+ */
+export type RouterEndpoint = {
+  /** Routing slug: `provider[/variant][/region][/tier]`, e.g. `deepinfra/turbo`. */
+  slug: string;
+  providerName: string;
+  contextLength: number | null;
+  maxCompletionTokens: number | null;
+  quantization: string;
+  pricing: {
+    prompt: number | null;
+    completion: number | null;
+    cacheRead: number | null;
+    discount: number | null;
+  };
+  supportedParameters: string[];
+  status: number | null;
+  uptimeLast30m: number | null;
+  uptimeLast1d: number | null;
+  latencyLast30m: number | null;
+  throughputLast30m: number | null;
+};
+
+/**
+ * Catalog URL for a model's provider endpoints. OpenRouter addresses the
+ * catalog as `models/{author}/{slug}/endpoints`, so the model ID must be
+ * `author/slug`; a `:free` style variant suffix rides on the request model
+ * and never in the URL, so it is stripped here.
+ */
+export const endpointCandidates = (baseURL: string, modelID: string): string[] => {
+  const base = baseURL.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\/\S+$/i.test(base)) return [];
+  const id = modelID.trim();
+  const slash = id.indexOf('/');
+  if (slash <= 0 || slash === id.length - 1) return [];
+  const author = id.slice(0, slash).trim();
+  const slug = id.slice(slash + 1).split(':')[0]!.trim();
+  if (!author || !slug) return [];
+  return [`${base}/models/${encodeURIComponent(author)}/${encodeURIComponent(slug)}/endpoints`];
+};
+
+/**
+ * Headers for the catalog request. Reading the list is public, so a missing
+ * key must not send an empty bearer; a present key only raises rate limits.
+ */
+export const endpointHeaders = (apiKey: string): Record<string, string> => {
+  const headers: Record<string, string> = { accept: 'application/json' };
+  const key = apiKey.trim();
+  if (key) headers.authorization = `Bearer ${key}`;
+  return headers;
+};
+
+const numberOrNull = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
+
+const priceOrNull = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const slugify = (name: string): string => (
+  name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+);
+
+/** Provider endpoints from the `models/{author}/{slug}/endpoints` response. */
+export const parseEndpoints = (payload: unknown): RouterEndpoint[] => {
+  const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const data = isRecord(record.data) ? record.data : {};
+  const list = Array.isArray(data.endpoints) ? data.endpoints : [];
+  const out: RouterEndpoint[] = [];
+  const seen = new Set<string>();
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as Record<string, unknown>;
+    const providerName = typeof item.provider_name === 'string' ? item.provider_name.trim() : '';
+    const tag = typeof item.tag === 'string' ? item.tag.trim() : '';
+    const slug = tag || slugify(providerName);
+    if (!slug || !providerName) continue;
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    const pricing = isRecord(item.pricing) ? item.pricing : {};
+    out.push({
+      slug,
+      providerName,
+      contextLength: numberOrNull(item.context_length),
+      maxCompletionTokens: numberOrNull(item.max_completion_tokens),
+      quantization: typeof item.quantization === 'string' ? item.quantization : '',
+      pricing: {
+        prompt: priceOrNull(pricing.prompt),
+        completion: priceOrNull(pricing.completion),
+        cacheRead: priceOrNull(pricing.input_cache_read),
+        discount: priceOrNull(pricing.discount),
+      },
+      supportedParameters: Array.isArray(item.supported_parameters)
+        ? item.supported_parameters.filter((entry): entry is string => typeof entry === 'string')
+        : [],
+      status: numberOrNull(item.status),
+      uptimeLast30m: numberOrNull(item.uptime_last_30m),
+      uptimeLast1d: numberOrNull(item.uptime_last_1d),
+      latencyLast30m: numberOrNull(item.latency_last_30m),
+      throughputLast30m: numberOrNull(item.throughput_last_30m),
+    });
+  }
+  return out;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  !!value && typeof value === 'object' && !Array.isArray(value)
+);

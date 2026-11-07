@@ -35,6 +35,17 @@ import {
   type ProviderEntry,
 } from './core/provider';
 import { PROTOCOLS, packageLabel, type ProtocolId } from './core/protocols';
+import type { RouterEndpoint } from '../service/models';
+import {
+  contextText,
+  isRouterBaseURL,
+  latencyText,
+  priceText,
+  throughputText,
+  uptimeText,
+  sortEndpoints,
+  type RouterSort,
+} from './core/router';
 import { hasErrors, validateDraft, type DraftErrors } from './core/validate';
 import { DICTIONARIES, type Locale, type MessageKey } from './i18n';
 import { clear, el, span } from './ui/dom';
@@ -52,6 +63,13 @@ export type ModelFetchRequest = {
   protocol: ProtocolId;
 };
 
+export type ProviderFetchRequest = {
+  baseURL: string;
+  apiKey: string;
+  /** The upstream model to look up, `author/slug` for the router catalog. */
+  modelID: string;
+};
+
 /** A failed model-list request, split so the panel can localise the service case. */
 export class ModelFetchError extends Error {
   constructor(readonly code: 'service' | 'request', message: string) {
@@ -61,6 +79,7 @@ export class ModelFetchError extends Error {
 
 export type PanelHost = FileHost & ToastSink & {
   fetchModels: (request: ModelFetchRequest) => Promise<string[]>;
+  fetchProviders: (request: ProviderFetchRequest) => Promise<RouterEndpoint[]>;
 };
 
 export type PendingConfirm =
@@ -119,6 +138,17 @@ export class ProviderPanel {
   private fetchingModelKey: string | null = null;
   private manualModelIDs = new Set<string>();
 
+  /** Open provider pickers, per model key. */
+  private routerEndpoints = new Map<string, RouterEndpoint[]>();
+  private routerSelection = new Map<string, string[]>();
+  private routerFallback = new Map<string, boolean>();
+  private routerBusy: string | null = null;
+  private routerError: string | null = null;
+  private routerSort: RouterSort = 'default';
+  /** Per-model max price inputs, dollars per million tokens. */
+  private routerMaxPrompt = new Map<string, string>();
+  private routerMaxCompletion = new Map<string, string>();
+
   private mounted: Disposable[] = [];
 
   constructor(root: HTMLElement, host: PanelHost) {
@@ -176,6 +206,14 @@ export class ProviderPanel {
       this.modelOptions = [];
       this.fetchingModelKey = null;
       this.manualModelIDs.clear();
+      this.routerEndpoints.clear();
+      this.routerSelection.clear();
+      this.routerFallback.clear();
+      this.routerBusy = null;
+      this.routerError = null;
+      this.routerSort = 'default';
+      this.routerMaxPrompt.clear();
+      this.routerMaxCompletion.clear();
       if (!this.selectedID || !snapshot.providers.some((entry) => entry.id === this.selectedID)) {
         this.selectedID = this.defaultSelection();
       }
@@ -235,6 +273,14 @@ export class ProviderPanel {
     this.modelOptions = [];
     this.fetchingModelKey = null;
     this.manualModelIDs.clear();
+    this.routerEndpoints.clear();
+    this.routerSelection.clear();
+    this.routerFallback.clear();
+    this.routerBusy = null;
+    this.routerError = null;
+    this.routerSort = 'default';
+    this.routerMaxPrompt.clear();
+    this.routerMaxCompletion.clear();
     this.expanded = new Set(this.draft.models.slice(0, 1).map((model) => model.key));
   }
 
@@ -251,6 +297,14 @@ export class ProviderPanel {
     this.modelOptions = [];
     this.fetchingModelKey = null;
     this.manualModelIDs.clear();
+    this.routerEndpoints.clear();
+    this.routerSelection.clear();
+    this.routerFallback.clear();
+    this.routerBusy = null;
+    this.routerError = null;
+    this.routerSort = 'default';
+    this.routerMaxPrompt.clear();
+    this.routerMaxCompletion.clear();
     this.expanded = new Set(this.draft.models.map((model) => model.key));
   }
 
@@ -264,6 +318,14 @@ export class ProviderPanel {
     this.modelOptions = [];
     this.fetchingModelKey = null;
     this.manualModelIDs.clear();
+    this.routerEndpoints.clear();
+    this.routerSelection.clear();
+    this.routerFallback.clear();
+    this.routerBusy = null;
+    this.routerError = null;
+    this.routerSort = 'default';
+    this.routerMaxPrompt.clear();
+    this.routerMaxCompletion.clear();
   }
 
   private select(id: string): void {
@@ -358,7 +420,7 @@ export class ProviderPanel {
 
   /** Keeps the per-card Fetch buttons in step with the connection fields. */
   private updateFetchButtons(): void {
-    const disabled = this.busy || this.fetchingModelKey !== null || !this.canFetchModels();
+    const disabled = this.busy || this.fetchingModelKey !== null || this.routerBusy !== null || !this.canFetchModels();
     for (const button of this.root.querySelectorAll<HTMLButtonElement>('[data-fetch]')) {
       button.disabled = disabled;
     }
@@ -411,6 +473,114 @@ export class ProviderPanel {
       editingID: this.editingID,
     });
     return !hasErrors(this.errors);
+  }
+
+  /* ----------------------------------------------------------- provider routing */
+
+  /** The model ID the requests carry: the alias, else the catalog ID. */
+  private upstreamID(model: ModelDraft): string {
+    return model.modelID.trim() || model.id.trim();
+  }
+
+  /** The picker exists for OpenRouter bases, where per-provider routing is real. */
+  private canFetchProviders(model: ModelDraft): boolean {
+    if (!this.draft || !isRouterBaseURL(this.draft.baseURL)) return false;
+    const id = this.upstreamID(model);
+    const slash = id.indexOf('/');
+    return slash > 0 && slash < id.length - 1;
+  }
+
+  private async fetchProviders(modelKey: string): Promise<void> {
+    const draft = this.draft;
+    if (!draft || this.busy || this.routerBusy || this.fetchingModelKey) return;
+    const model = draft.models.find((item) => item.key === modelKey);
+    if (!model || !isRouterBaseURL(draft.baseURL)) return;
+    const modelID = this.upstreamID(model);
+    if (!this.canFetchProviders(model)) {
+      await this.host.toast({ kind: 'error', message: this.tr('routerNeedsModel') });
+      return;
+    }
+
+    this.routerBusy = modelKey;
+    this.routerError = null;
+    this.paint();
+    try {
+      const endpoints = await this.host.fetchProviders({
+        baseURL: draft.baseURL.trim(),
+        apiKey: draft.apiKey.trim(),
+        modelID,
+      });
+      if (this.draft !== draft) return;
+      this.routerEndpoints.set(modelKey, endpoints);
+      // The selection starts from the routing the model already carries, in
+      // its saved order; slugs the catalog no longer reports drop away.
+      const known = new Set(endpoints.map((endpoint) => endpoint.slug));
+      this.routerSelection.set(modelKey, model.routing?.slugs.filter((slug) => known.has(slug)) ?? []);
+      this.routerFallback.set(modelKey, model.routing?.fallback ?? false);
+      this.routerMaxPrompt.set(modelKey, model.routing?.maxPrompt ?? '');
+      this.routerMaxCompletion.set(modelKey, model.routing?.maxCompletion ?? '');
+    } catch (error) {
+      if (this.draft !== draft) return;
+      const message = error instanceof ModelFetchError && error.code === 'service'
+        ? this.tr('fetchService')
+        : errorText(error);
+      this.routerError = fill(this.tr('routerFailed'), { message });
+    } finally {
+      this.routerBusy = null;
+      this.paint();
+    }
+  }
+
+  private toggleRouterPicker(modelKey: string): void {
+    if (this.routerEndpoints.has(modelKey)) {
+      this.routerEndpoints.delete(modelKey);
+      this.routerSelection.delete(modelKey);
+      this.routerFallback.delete(modelKey);
+      this.routerMaxPrompt.delete(modelKey);
+      this.routerMaxCompletion.delete(modelKey);
+      this.routerError = null;
+      this.paint();
+      return;
+    }
+    void this.fetchProviders(modelKey);
+  }
+
+  private toggleRouterSelection(modelKey: string, slug: string): void {
+    const current = this.routerSelection.get(modelKey) ?? [];
+    this.routerSelection.set(
+      modelKey,
+      current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug],
+    );
+    this.paint();
+  }
+
+  /** Applies the picked providers to the model draft and closes the picker. */
+  private applyRouterSelection(modelKey: string): void {
+    const draft = this.draft;
+    if (!draft) return;
+    const model = draft.models.find((item) => item.key === modelKey);
+    if (!model) return;
+    const slugs = this.routerSelection.get(modelKey) ?? [];
+    const maxPrompt = this.routerMaxPrompt.get(modelKey)?.trim() ?? '';
+    const maxCompletion = this.routerMaxCompletion.get(modelKey)?.trim() ?? '';
+    if (slugs.length > 0 || maxPrompt !== '' || maxCompletion !== '') {
+      model.routing = {
+        slugs,
+        fallback: this.routerFallback.get(modelKey) ?? false,
+        ...(maxPrompt !== '' && { maxPrompt }),
+        ...(maxCompletion !== '' && { maxCompletion }),
+      };
+    } else {
+      model.routing = undefined;
+    }
+    if (this.errors.models) this.errors.models = undefined;
+    this.routerEndpoints.delete(modelKey);
+    this.routerSelection.delete(modelKey);
+    this.routerFallback.delete(modelKey);
+    this.routerMaxPrompt.delete(modelKey);
+    this.routerMaxCompletion.delete(modelKey);
+    this.routerError = null;
+    this.paint();
   }
 
   private async save(): Promise<void> {
@@ -1033,13 +1203,33 @@ export class ProviderPanel {
       type: 'button',
       'aria-label': this.tr('fetchModels'),
       title: this.tr('fetchModels'),
-      disabled: this.busy || this.fetchingModelKey !== null || !this.canFetchModels(),
+      disabled: this.busy || this.fetchingModelKey !== null || this.routerBusy !== null || !this.canFetchModels(),
     });
     fetch.dataset.fetch = model.key;
     fetch.dataset.focus = `model-fetch:${model.key}`;
     fetch.textContent = this.fetchingModelKey === model.key ? this.tr('fetching') : this.tr('fetch');
     fetch.addEventListener('click', () => void this.fetchModels(model.key));
     head.append(fetch);
+
+    if (isRouterBaseURL(current.baseURL)) {
+      const picked = model.routing?.slugs.length ?? 0;
+      const router = el('button', 'model-fetch', {
+        type: 'button',
+        'aria-label': this.tr('routerProvidersTitle'),
+        title: picked > 0
+          ? `${this.tr('routerProvidersTitle')} · ${fill(this.tr('routerBadge'), { count: String(picked) })}`
+          : this.tr('routerProvidersTitle'),
+        disabled: this.busy || this.fetchingModelKey !== null || this.routerBusy !== null || !this.canFetchProviders(model),
+      });
+      router.dataset.focus = `router:${model.key}`;
+      router.textContent = this.routerBusy === model.key
+        ? this.tr('routerFetching')
+        : picked > 0
+          ? `${this.tr('routerProviders')} · ${picked}`
+          : this.tr('routerProviders');
+      router.addEventListener('click', () => this.toggleRouterPicker(model.key));
+      head.append(router);
+    }
 
     if (current.models.length > 1) {
       const remove = el('button', 'model-toggle', {
@@ -1062,6 +1252,9 @@ export class ProviderPanel {
 
     const fields = el('div', 'model-body');
     card.append(fields);
+
+    const picker = this.routerEndpoints.get(model.key);
+    if (picker) fields.append(this.renderRouterPicker(model));
 
     const idSlot = el('div', 'model-id-slot');
     fields.append(idSlot);
@@ -1186,6 +1379,139 @@ export class ProviderPanel {
     fields.append(switches);
 
     return card;
+  }
+
+  /** The per-model OpenRouter provider picker, as an inline section. */
+  private renderRouterPicker(model: ModelDraft): HTMLElement {
+    const panel = el('div', 'router-panel wide');
+    panel.dataset.role = 'router-picker';
+
+    const head = el('div', 'router-head');
+    const title = el('div', 'mini-label');
+    title.textContent = this.tr('routerTitle');
+    head.append(title, el('div', 'spacer'));
+    const sorts: Array<{ id: RouterSort; key: MessageKey }> = [
+      { id: 'default', key: 'routerSortDefault' },
+      { id: 'price', key: 'routerSortPrice' },
+      { id: 'speed', key: 'routerSortSpeed' },
+    ];
+    for (const sort of sorts) {
+      const chip = el('button', 'router-sort', {
+        type: 'button',
+        'aria-pressed': String(this.routerSort === sort.id),
+        title: this.tr(sort.key),
+      });
+      chip.textContent = this.tr(sort.key);
+      chip.dataset.focus = `router-sort:${sort.id}`;
+      chip.addEventListener('click', () => {
+        this.routerSort = sort.id;
+        this.paint();
+        this.root.querySelector<HTMLElement>(`[data-focus="router-sort:${CSS.escape(sort.id)}"]`)?.focus();
+      });
+      head.append(chip);
+    }
+    panel.append(head);
+
+    const hint = el('div', 'router-hint');
+    hint.textContent = this.tr('routerHint');
+    panel.append(hint);
+
+    if (this.routerError) {
+      panel.append(this.notice('error', this.tr('routerTitle'), this.routerError));
+    }
+
+    const endpoints = sortEndpoints(this.routerEndpoints.get(model.key) ?? [], this.routerSort);
+    const selection = this.routerSelection.get(model.key) ?? [];
+    if (endpoints.length === 0) {
+      const empty = el('div', 'router-empty');
+      empty.textContent = this.tr('routerEmpty');
+      panel.append(empty);
+      return panel;
+    }
+
+    const rows = el('div', 'router-rows');
+    rows.setAttribute('role', 'group');
+    rows.setAttribute('aria-label', this.tr('routerTitle'));
+    for (const endpoint of endpoints) {
+      const on = selection.includes(endpoint.slug);
+      const row = el('button', 'router-row', {
+        type: 'button',
+        'aria-pressed': String(on),
+        'data-focus': `router-row:${model.key}:${endpoint.slug}`,
+        title: endpoint.slug,
+      });
+      row.dataset.slug = endpoint.slug;
+
+      const main = el('span', 'router-row-main');
+      span(main, endpoint.providerName, 'router-name');
+      span(main, endpoint.slug, 'router-slug');
+      row.append(main);
+
+      const meta = el('span', 'router-meta');
+      const prompt = span(meta, `${priceText(endpoint.pricing.prompt)} ${this.tr('routerIn')}`, 'router-fact');
+      prompt.title = this.tr('routerPriceInTitle');
+      const completion = span(meta, `${priceText(endpoint.pricing.completion)} ${this.tr('routerOut')}`, 'router-fact');
+      completion.title = this.tr('routerPriceOutTitle');
+      const speed = span(meta, throughputText(endpoint.throughputLast30m), 'router-fact');
+      speed.title = this.tr('routerThroughputTitle');
+      const latency = span(meta, latencyText(endpoint.latencyLast30m), 'router-fact');
+      latency.title = this.tr('routerLatencyTitle');
+      const uptime = span(meta, uptimeText(endpoint.uptimeLast30m), 'router-fact');
+      uptime.title = this.tr('routerUptimeTitle');
+      const context = span(meta, contextText(endpoint.contextLength), 'router-fact');
+      context.title = this.tr('routerContextTitle');
+      if (endpoint.quantization) span(meta, endpoint.quantization, 'router-quant');
+      if (endpoint.status !== null && endpoint.status !== 0) span(meta, this.tr('routerInactive'), 'router-off');
+      row.append(meta);
+
+      row.addEventListener('click', () => this.toggleRouterSelection(model.key, endpoint.slug));
+      rows.append(row);
+    }
+    panel.append(rows);
+
+    const foot = el('div', 'router-foot');
+    const maxBlock = el('div', 'router-max');
+    maxBlock.title = this.tr('routerMaxHint');
+    this.mounted.push(mountTextField(maxBlock, {
+      label: this.tr('routerMaxIn'),
+      value: this.routerMaxPrompt.get(model.key) ?? '',
+      placeholder: '0.5',
+      onChange: (value) => {
+        this.routerMaxPrompt.set(model.key, value);
+      },
+    }));
+    this.mounted.push(mountTextField(maxBlock, {
+      label: this.tr('routerMaxOut'),
+      value: this.routerMaxCompletion.get(model.key) ?? '',
+      placeholder: '1.5',
+      onChange: (value) => {
+        this.routerMaxCompletion.set(model.key, value);
+      },
+    }));
+    const fallback = el('div', 'router-fallback');
+    fallback.title = this.tr('routerFallbackHint');
+    this.mounted.push(mountSwitch(fallback, {
+      label: this.tr('routerFallback'),
+      checked: this.routerFallback.get(model.key) ?? false,
+      onChange: (checked) => {
+        this.routerFallback.set(model.key, checked);
+      },
+    }));
+    foot.append(maxBlock, fallback, el('div', 'spacer'));
+    this.mounted.push(mountButton(foot, {
+      label: this.tr('routerCancel'),
+      size: 'xs',
+      variant: 'ghost',
+      onClick: () => this.toggleRouterPicker(model.key),
+    }));
+    this.mounted.push(mountButton(foot, {
+      label: this.tr('routerApply'),
+      size: 'xs',
+      onClick: () => this.applyRouterSelection(model.key),
+    }));
+    panel.append(foot);
+
+    return panel;
   }
 
   private renderDraftFooter(foot: HTMLElement): void {

@@ -11,7 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { modelCandidates, modelHeaders, parseModelIDs } from './models';
+import { modelCandidates, modelHeaders, parseModelIDs, endpointCandidates, endpointHeaders, parseEndpoints, type RouterEndpoint } from './models';
 
 const PORT = Number(process.env.OPENCHAMBER_SERVICE_PORT ?? 0);
 const TOKEN = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
@@ -23,6 +23,7 @@ type FetchRequest = {
   baseURL?: unknown;
   apiKey?: unknown;
   protocol?: unknown;
+  modelID?: unknown;
 };
 
 class ServiceError extends Error {
@@ -78,13 +79,14 @@ const resolveKey = (value: string): string => {
   return value.trim();
 };
 
-const requestModels = async (url: string, protocol: string, apiKey: string): Promise<string[]> => {
+/** One GET to a catalog endpoint, with the error mapping both handlers share. */
+const requestPayload = async (url: string, headers: Record<string, string>): Promise<unknown> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       method: 'GET',
-      headers: modelHeaders(protocol, apiKey),
+      headers,
       redirect: 'follow',
       signal: controller.signal,
     });
@@ -103,17 +105,11 @@ const requestModels = async (url: string, protocol: string, apiKey: string): Pro
         `HTTP ${response.status}${statusText}${detail ? `: ${detail}` : ''}`,
       );
     }
-    let payload: unknown;
     try {
-      payload = JSON.parse(text);
+      return JSON.parse(text);
     } catch {
       throw new ServiceError(502, 'The endpoint did not return JSON.');
     }
-    const models = parseModelIDs(payload);
-    if (models.length === 0) {
-      throw new ServiceError(502, 'The endpoint returned no model IDs.');
-    }
-    return models;
   } catch (error) {
     if (error instanceof ServiceError) throw error;
     if (error instanceof Error && error.name === 'AbortError') {
@@ -123,6 +119,20 @@ const requestModels = async (url: string, protocol: string, apiKey: string): Pro
   } finally {
     clearTimeout(timer);
   }
+};
+
+const requestModels = async (url: string, protocol: string, apiKey: string): Promise<string[]> => {
+  const payload = await requestPayload(url, modelHeaders(protocol, apiKey));
+  const models = parseModelIDs(payload);
+  if (models.length === 0) {
+    throw new ServiceError(502, 'The endpoint returned no model IDs.');
+  }
+  return models;
+};
+
+const requestEndpoints = async (url: string, apiKey: string): Promise<RouterEndpoint[]> => {
+  const payload = await requestPayload(url, endpointHeaders(apiKey));
+  return parseEndpoints(payload);
 };
 
 const handleModels = async (body: string): Promise<string[]> => {
@@ -154,6 +164,30 @@ const handleModels = async (body: string): Promise<string[]> => {
   throw last ?? new ServiceError(502, 'Could not fetch the model list.');
 };
 
+/**
+ * Provider endpoints for one router model. Reading the OpenRouter catalog is
+ * public, so the API key is optional here: it is sent when the panel has one
+ * and omitted otherwise.
+ */
+const handleProviders = async (body: string): Promise<RouterEndpoint[]> => {
+  let request: FetchRequest;
+  try {
+    request = JSON.parse(body) as FetchRequest;
+  } catch {
+    throw new ServiceError(400, 'Expected a JSON body.');
+  }
+  const baseURL = typeof request.baseURL === 'string' ? request.baseURL.trim() : '';
+  const modelID = typeof request.modelID === 'string' ? request.modelID.trim() : '';
+  const apiKey = typeof request.apiKey === 'string' ? resolveKey(request.apiKey) : '';
+  if (!baseURL) throw new ServiceError(400, 'Base URL is required.');
+  if (!modelID) throw new ServiceError(400, 'Model ID is required.');
+  const urls = endpointCandidates(baseURL, modelID);
+  if (urls.length === 0) {
+    throw new ServiceError(400, 'Model ID must look like author/slug, e.g. meta-llama/llama-3.3-70b-instruct.');
+  }
+  return requestEndpoints(urls[0]!, apiKey);
+};
+
 const server = createServer(async (req, res) => {
   try {
     if (req.headers.authorization !== `Bearer ${TOKEN}`) {
@@ -168,6 +202,11 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/models') {
       const models = await handleModels(await readBody(req));
       send(res, 200, { models });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/providers') {
+      const endpoints = await handleProviders(await readBody(req));
+      send(res, 200, { endpoints });
       return;
     }
     send(res, 404, { error: 'Not found' });

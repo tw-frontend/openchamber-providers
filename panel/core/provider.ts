@@ -46,6 +46,13 @@ export type ModelDraft = {
   levels: string[];
   image: boolean;
   tools: boolean;
+  /**
+   * OpenRouter provider routing, written as the model's request-body
+   * `provider` overlay (`only` + `order` endpoint slugs, `max_price` caps).
+   * Absent when the model routes through every provider of the upstream
+   * model. Max prices are dollars per million tokens as typed text.
+   */
+  routing?: { slugs: string[]; fallback: boolean; maxPrompt?: string; maxCompletion?: string };
 };
 
 export type ProviderDraft = {
@@ -193,6 +200,35 @@ const imageInputOf = (model: JsonObject): boolean => {
   return true;
 };
 
+/**
+ * OpenRouter routing the model already carries, from the request-body
+ * `provider` overlay: `only` restricts the pool and `order` prioritises it,
+ * so both spellings name the selection; `max_price` caps the per-million
+ * price. A provider object without any of these is a hand-written routing
+ * the picker does not own and reads as no selection.
+ */
+const routingOf = (entry: JsonObject): { slugs: string[]; fallback: boolean; maxPrompt?: string; maxCompletion?: string } | undefined => {
+  const body = isObject(entry.body) ? entry.body : undefined;
+  const provider = body && isObject(body.provider) ? body.provider : undefined;
+  if (!provider) return undefined;
+  const slugs = [...new Set([...stringList(provider.only), ...stringList(provider.order)])];
+  const maxPrice = isObject(provider.max_price) ? provider.max_price : undefined;
+  const maxPrompt = maxPrice && typeof maxPrice.prompt === 'number' && Number.isFinite(maxPrice.prompt)
+    ? String(maxPrice.prompt)
+    : undefined;
+  const maxCompletion = maxPrice && typeof maxPrice.completion === 'number' && Number.isFinite(maxPrice.completion)
+    ? String(maxPrice.completion)
+    : undefined;
+  if (slugs.length === 0 && maxPrompt === undefined && maxCompletion === undefined) return undefined;
+  return {
+    slugs,
+    // OpenRouter routes to any provider unless told otherwise.
+    fallback: provider.allow_fallbacks !== false,
+    ...(maxPrompt !== undefined && { maxPrompt }),
+    ...(maxCompletion !== undefined && { maxCompletion }),
+  };
+};
+
 const toolCallOf = (model: JsonObject): boolean => {
   const capabilities = isObject(model.capabilities) ? model.capabilities : undefined;
   if (capabilities && typeof capabilities.tools === 'boolean') return capabilities.tools;
@@ -234,6 +270,7 @@ export const readModels = (provider: JsonObject): ModelDraft[] => {
       levels,
       image: imageInputOf(entry),
       tools: toolCallOf(entry),
+      routing: routingOf(entry),
     };
   });
 
@@ -410,6 +447,50 @@ const modelFor = (model: ModelDraft, previous: JsonObject, pkg: string): JsonObj
   const variants = variantsFor(previous, pkg, model.levels);
   if (variants.length > 0) entry.variants = variants;
   else delete entry.variants;
+
+  /*
+   * OpenRouter routing rides in the model's own request-body overlay, which
+   * OpenCode merges into every request for this model: `only` restricts the
+   * provider pool to the selection, `order` tries it in the picked order, and
+   * `max_price` caps the per-million price. Body keys the panel does not
+   * manage stay; clearing the selection drops `body.provider` but keeps the
+   * rest of the body.
+   */
+  const body = isObject(entry.body) ? { ...entry.body } : undefined;
+  const routing = model.routing;
+  const slugs = routing?.slugs.filter((slug) => slug.trim() !== '') ?? [];
+  const maxPrompt = routing?.maxPrompt?.trim() ?? '';
+  const maxCompletion = routing?.maxCompletion?.trim() ?? '';
+  if (routing && (slugs.length > 0 || maxPrompt !== '' || maxCompletion !== '')) {
+    const previousProvider = body && isObject(body.provider) ? body.provider : {};
+    // Fields the picker does not manage (data_collection, quantizations, …)
+    // survive; max_price merges over any hand-written caps.
+    const providerOverlay: JsonObject = {};
+    for (const [key, value] of Object.entries(previousProvider)) {
+      if (key !== 'only' && key !== 'order' && key !== 'allow_fallbacks' && key !== 'max_price') {
+        providerOverlay[key] = value;
+      }
+    }
+    if (slugs.length > 0) {
+      providerOverlay.only = [...slugs];
+      providerOverlay.order = [...slugs];
+      providerOverlay.allow_fallbacks = routing.fallback;
+    }
+    const previousMaxPrice = isObject(previousProvider.max_price) ? previousProvider.max_price : {};
+    const maxPrice: JsonObject = {};
+    for (const [key, value] of Object.entries(previousMaxPrice)) {
+      if (key !== 'prompt' && key !== 'completion') maxPrice[key] = value;
+    }
+    if (maxPrompt !== '') maxPrice.prompt = Number(maxPrompt);
+    if (maxCompletion !== '') maxPrice.completion = Number(maxCompletion);
+    if (maxPrompt !== '' || maxCompletion !== '') providerOverlay.max_price = maxPrice;
+    entry.body = { ...(body ?? {}), provider: providerOverlay };
+  } else if (body && isObject(body.provider)) {
+    const rest: JsonObject = { ...body };
+    delete rest.provider;
+    if (Object.keys(rest).length > 0) entry.body = rest;
+    else delete entry.body;
+  }
 
   return entry;
 };

@@ -47,6 +47,23 @@ const seed = {
         },
       },
       anthropic: { settings: { baseURL: 'https://proxy.example.com/anthropic' } },
+      openrouter: {
+        name: 'OpenRouter',
+        package: 'aisdk:@ai-sdk/openai-compatible',
+        settings: { baseURL: 'https://openrouter.ai/api/v1', apiKey: '{env:OPENROUTER_API_KEY}' },
+        models: {
+          'meta-llama/llama-3.3-70b-instruct': {
+            modelID: 'meta-llama/llama-3.3-70b-instruct',
+            name: 'Llama 3.3 70B Instruct',
+            capabilities: {
+              tools: true,
+              input: ['text'],
+              output: ['text'],
+              reasoning: { supported: true, effort: ['low', 'high'] },
+            },
+          },
+        },
+      },
     },
     model: 'relay_fast/deepseek-v4.1-flash',
   }, null, 2) + '\n',
@@ -92,6 +109,39 @@ const host: PanelHost = {
       'gpt-6.1-sol',
       'claude-sonnet-4-5',
       'qwen3-coder',
+    ];
+  },
+  // Fake OpenRouter catalog so the provider picker is browsable in preview.
+  fetchProviders: async ({ baseURL }) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    if (!baseURL.includes('openrouter')) throw new Error('HTTP 404 Not Found');
+    const endpoint = (
+      slug: string,
+      providerName: string,
+      prompt: string,
+      completion: string,
+      throughput: number | null,
+      latency: number | null,
+      quantization = '',
+    ) => ({
+      slug,
+      providerName,
+      contextLength: 131072,
+      maxCompletionTokens: 8192,
+      quantization,
+      pricing: { prompt, completion, cacheRead: '0', discount: 0 },
+      supportedParameters: ['tools'],
+      status: 0,
+      uptimeLast30m: 100,
+      uptimeLast1d: 99.8,
+      latencyLast30m: latency,
+      throughputLast30m: throughput,
+    });
+    return [
+      endpoint('deepinfra/turbo', 'DeepInfra', '0.00000006', '0.00000024', 42, 0.4, 'fp8'),
+      endpoint('together', 'Together', '0.00000005', '0.00000020', 61, 0.3),
+      endpoint('fireworks', 'Fireworks AI', '0.00000009', '0.00000027', 88, 0.2),
+      endpoint('amazon-bedrock', 'Amazon Bedrock', '0.00000016', '0.00000048', null, null),
     ];
   },
 };

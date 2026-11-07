@@ -628,6 +628,178 @@ html[data-oc-surface='page'] .panes {
   outline-offset: 1px;
 }
 
+/* ----------------------------------------------------------- router picker */
+
+/* The per-model OpenRouter provider picker, an inline section at the top of
+ * a model body. Rows are toggles: pressed rows are the routing selection,
+ * in click order. */
+
+.router-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: transparent;
+  min-width: 0;
+}
+
+.router-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.router-sort {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--oc-muted);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  transition: background 130ms ease-out, border-color 130ms ease-out, color 130ms ease-out;
+}
+
+.router-sort:hover {
+  border-color: color-mix(in srgb, var(--oc-fg) 22%, transparent);
+  color: var(--oc-fg);
+}
+
+.router-sort[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--oc-fg);
+  font-weight: 600;
+}
+
+.router-sort:focus-visible {
+  outline: 2px solid var(--oc-focus, var(--oc-primary));
+  outline-offset: 1px;
+}
+
+.router-hint {
+  font-size: 0.75rem;
+  color: var(--oc-muted);
+}
+
+.router-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.router-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease-out, border-color 120ms ease-out;
+}
+
+.router-row:hover {
+  background: var(--fill);
+  border-color: var(--line-soft);
+}
+
+.router-row[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+
+.router-row:focus-visible {
+  outline: 2px solid var(--oc-focus, var(--oc-primary));
+  outline-offset: 1px;
+}
+
+.router-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.router-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.router-slug {
+  font: 0.6875rem/1.3 var(--oc-mono, monospace);
+  color: var(--oc-muted);
+  white-space: nowrap;
+}
+
+.router-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font: 0.6875rem/1.4 var(--oc-mono, monospace);
+  color: var(--oc-muted);
+  white-space: nowrap;
+}
+
+.router-fact:first-child {
+  color: var(--oc-fg);
+}
+
+.router-quant {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.625rem;
+}
+
+.router-off {
+  color: var(--oc-error-text, #d9534f);
+}
+
+.router-empty {
+  padding: 8px 4px;
+  font-size: 0.75rem;
+  color: var(--oc-muted);
+}
+
+.router-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.router-max {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.router-max > .oc-sdk-field {
+  width: 128px;
+}
+
+.router-fallback {
+  min-width: 0;
+}
+
 /* ------------------------------------------------------------------- footer */
 
 .detail-foot {

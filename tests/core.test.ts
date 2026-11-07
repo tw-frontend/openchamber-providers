@@ -16,6 +16,17 @@ import { idFromName, uniqueIDFrom } from '../panel/core/provider';
 import { packageFrom, protocolOfPackage } from '../panel/core/protocols';
 import { validateDraft } from '../panel/core/validate';
 import { modelCandidates, modelHeaders, parseModelIDs } from '../service/models';
+import { endpointCandidates, endpointHeaders, parseEndpoints } from '../service/models';
+import {
+  contextText,
+  isRouterBaseURL,
+  latencyText,
+  perMillion,
+  priceText,
+  sortEndpoints,
+  throughputText,
+  uptimeText,
+} from '../panel/core/router';
 
 const draft = (overrides: Partial<ProviderDraft> = {}): ProviderDraft => ({
   ...emptyDraft(),
@@ -558,5 +569,237 @@ test('model IDs are read from the shapes gateways return', () => {
   assert.deepEqual(parseModelIDs({ models: ['c', { model: 'd' }] }), ['c', 'd']);
   assert.deepEqual(parseModelIDs(['e', { name: 'f' }]), ['e', 'f']);
   assert.deepEqual(parseModelIDs({ data: [] }), []);
+});
+
+/* ----------------------------------------------------------- router catalog */
+
+test('catalog URLs address the model by author and slug', () => {
+  assert.deepEqual(
+    endpointCandidates('https://openrouter.ai/api/v1', 'meta-llama/llama-3.3-70b-instruct'),
+    ['https://openrouter.ai/api/v1/models/meta-llama/llama-3.3-70b-instruct/endpoints'],
+  );
+  // A `:free` style suffix rides on the request model, never in the URL.
+  assert.deepEqual(
+    endpointCandidates('https://openrouter.ai/api/v1', 'meta-llama/llama-3.3-70b-instruct:free'),
+    ['https://openrouter.ai/api/v1/models/meta-llama/llama-3.3-70b-instruct/endpoints'],
+  );
+  // Trailing slashes on the base are trimmed; odd IDs are rejected.
+  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1/', 'deepseek/deepseek-chat'), [
+    'https://openrouter.ai/api/v1/models/deepseek/deepseek-chat/endpoints',
+  ]);
+  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1', 'qwen/qwq 32b'), [
+    'https://openrouter.ai/api/v1/models/qwen/qwq%2032b/endpoints',
+  ]);
+  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1', 'only-slug'), []);
+  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1', 'author/'), []);
+  assert.deepEqual(endpointCandidates('ftp://openrouter.ai', 'author/slug'), []);
+});
+
+test('catalog headers send a bearer only when a key exists', () => {
+  assert.deepEqual(endpointHeaders(''), { accept: 'application/json' });
+  assert.deepEqual(endpointHeaders('  '), { accept: 'application/json' });
+  assert.deepEqual(endpointHeaders('sk-1'), { accept: 'application/json', authorization: 'Bearer sk-1' });
+});
+
+test('endpoints are normalised and deduplicated from the catalog response', () => {
+  const payload = {
+    data: {
+      id: 'meta-llama/llama-3.3-70b-instruct',
+      endpoints: [
+        {
+          provider_name: 'DeepInfra',
+          tag: 'deepinfra/turbo',
+          context_length: 131072,
+          max_completion_tokens: 8192,
+          quantization: 'fp8',
+          pricing: { prompt: '0.0000001', completion: '0.00000032', input_cache_read: '0.00000002', discount: 0.5 },
+          supported_parameters: ['tools', 'response_format'],
+          status: 0,
+          uptime_last_30m: 100,
+          uptime_last_1d: 99.5,
+          latency_last_30m: 0.4,
+          throughput_last_30m: 47.2,
+        },
+        // Same tag: dropped. Tagless provider: slugified name. Junk: dropped.
+        { provider_name: 'DeepInfra', tag: 'deepinfra/turbo' },
+        { provider_name: 'No Tag' },
+        'junk',
+        { tag: 'only-a-tag' },
+      ],
+    },
+  };
+  const endpoints = parseEndpoints(payload);
+  assert.equal(endpoints.length, 2);
+  assert.deepEqual(endpoints[0], {
+    slug: 'deepinfra/turbo',
+    providerName: 'DeepInfra',
+    contextLength: 131072,
+    maxCompletionTokens: 8192,
+    quantization: 'fp8',
+    pricing: { prompt: 0.0000001, completion: 0.00000032, cacheRead: 0.00000002, discount: 0.5 },
+    supportedParameters: ['tools', 'response_format'],
+    status: 0,
+    uptimeLast30m: 100,
+    uptimeLast1d: 99.5,
+    latencyLast30m: 0.4,
+    throughputLast30m: 47.2,
+  });
+  assert.equal(endpoints[1]!.slug, 'no-tag');
+  assert.deepEqual(parseEndpoints({}), []);
+});
+
+/* --------------------------------------------------------- router formatting */
+
+test('prices become dollars per million tokens', () => {
+  assert.equal(Math.abs(perMillion(0.0000001)! - 0.1) < 1e-12, true);
+  assert.equal(perMillion(null), null);
+  assert.equal(priceText(0.0000001), '$0.10');
+  assert.equal(priceText(0.00000032), '$0.32');
+  assert.equal(priceText(2.19e-6), '$2.19');
+  assert.equal(priceText(0), '$0');
+  assert.equal(priceText(0.00000005), '$0.05');
+  assert.equal(priceText(null), '—');
+});
+
+test('speed and reachability read like the catalog measures them', () => {
+  assert.equal(throughputText(47.2), '47 tok/s');
+  assert.equal(throughputText(9.55), '9.6 tok/s');
+  assert.equal(throughputText(0), '—');
+  assert.equal(throughputText(null), '—');
+  assert.equal(latencyText(0.4), '0.4s');
+  assert.equal(latencyText(null), '—');
+  assert.equal(uptimeText(99.5), '100%');
+  assert.equal(uptimeText(null), '—');
+  assert.equal(contextText(131072), '131k');
+  assert.equal(contextText(1000000), '1M');
+  assert.equal(contextText(null), '—');
+});
+
+test('the picker sorts by price and by measured speed', () => {
+  const endpoint = (slug: string, prompt: number | null, throughput: number | null) => ({
+    slug,
+    providerName: slug,
+    contextLength: null,
+    maxCompletionTokens: null,
+    quantization: '',
+    pricing: { prompt, completion: prompt === null ? null : prompt * 3, cacheRead: null, discount: null },
+    supportedParameters: [],
+    status: 0,
+    uptimeLast30m: 100,
+    uptimeLast1d: null,
+    latencyLast30m: null,
+    throughputLast30m: throughput,
+  });
+  const list = [endpoint('a', 0.0000002, 10), endpoint('b', 0.0000001, 80), endpoint('c', null, null)];
+  assert.deepEqual(sortEndpoints(list, 'default').map((item) => item.slug), ['a', 'b', 'c']);
+  // Price: total prompt+completion, unknown prices sink to the end.
+  assert.deepEqual(sortEndpoints(list, 'price').map((item) => item.slug), ['b', 'a', 'c']);
+  // Speed: fastest first, unmeasured last.
+  assert.deepEqual(sortEndpoints(list, 'speed').map((item) => item.slug), ['b', 'a', 'c']);
+});
+
+test('the picker gates on OpenRouter base URLs', () => {
+  assert.equal(isRouterBaseURL('https://openrouter.ai/api/v1'), true);
+  assert.equal(isRouterBaseURL('https://openrouter.ai'), true);
+  assert.equal(isRouterBaseURL('http://openrouter.ai/api'), true);
+  assert.equal(isRouterBaseURL('https://www.openrouter.ai/api/v1'), true);
+  assert.equal(isRouterBaseURL('https://openrouter.ai.evil.example'), false);
+  assert.equal(isRouterBaseURL('https://myopenrouter.ai/api/v1'), false);
+  assert.equal(isRouterBaseURL('https://example.com/api/v1'), false);
+  assert.equal(isRouterBaseURL(''), false);
+});
+
+/* ------------------------------------------------------------- routing writes */
+
+test('routing reads from the body overlay and writes back with max price', () => {
+  const existing = {
+    name: 'OpenRouter',
+    settings: { baseURL: 'https://openrouter.ai/api/v1', apiKey: '{env:OPENROUTER_API_KEY}' },
+    models: {
+      coder: {
+        body: {
+          temperature: 0.2,
+          provider: { only: ['deepinfra/turbo'], order: ['deepinfra/turbo', 'together'], allow_fallbacks: false },
+        },
+      },
+    },
+  };
+  const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
+  const model = current.models[0]!;
+  assert.deepEqual(model.routing, { slugs: ['deepinfra/turbo', 'together'], fallback: false });
+
+  model.routing = { slugs: ['deepinfra/turbo'], fallback: false, maxPrompt: '0.5', maxCompletion: '1.5' };
+  const block = buildProvider(current, existing);
+  const written = (block.models as Record<string, Record<string, unknown>>).coder!;
+  assert.deepEqual(written.body, {
+    temperature: 0.2,
+    provider: {
+      only: ['deepinfra/turbo'],
+      order: ['deepinfra/turbo'],
+      allow_fallbacks: false,
+      max_price: { prompt: 0.5, completion: 1.5 },
+    },
+  });
+});
+
+test('clearing routing drops the provider overlay and keeps other body keys', () => {
+  const existing = {
+    settings: { baseURL: 'https://openrouter.ai/api/v1' },
+    models: {
+      coder: { body: { temperature: 0.2, provider: { only: ['deepinfra'] } } },
+      plain: { body: { provider: { order: ['together'] } } },
+    },
+  };
+  const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
+  current.models.forEach((model) => {
+    model.routing = undefined;
+  });
+  const block = buildProvider(current, existing);
+  const models = block.models as Record<string, Record<string, unknown>>;
+  assert.deepEqual(models.coder!.body, { temperature: 0.2 });
+  assert.equal(models.plain!.body, undefined);
+});
+
+test('hand-written provider keys survive a routing change', () => {
+  const existing = {
+    settings: { baseURL: 'https://openrouter.ai/api/v1' },
+    models: {
+      coder: {
+        body: {
+          provider: {
+            data_collection: 'deny',
+            quantizations: ['fp8'],
+            max_price: { prompt: 1, image: 2 },
+          },
+        },
+      },
+    },
+  };
+  const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
+  // A max price alone is a routing the picker owns, even without slugs.
+  assert.deepEqual(current.models[0]!.routing, { slugs: [], fallback: true, maxPrompt: '1' });
+  current.models[0]!.routing = { slugs: ['deepinfra'], fallback: true, maxCompletion: '2' };
+  const block = buildProvider(current, existing);
+  const written = (block.models as Record<string, Record<string, unknown>>).coder!;
+  assert.deepEqual(written.body, {
+    provider: {
+      data_collection: 'deny',
+      quantizations: ['fp8'],
+      only: ['deepinfra'],
+      order: ['deepinfra'],
+      allow_fallbacks: true,
+      max_price: { image: 2, completion: 2 },
+    },
+  });
+});
+
+test('max price rejects values that are not plain numbers', () => {
+  const current = draft();
+  current.models[0]!.routing = { slugs: [], fallback: true, maxPrompt: '0.5' };
+  assert.equal(validateDraft(current, { existingIDs: [], editingID: null }).models, undefined);
+  current.models[0]!.routing = { slugs: [], fallback: true, maxPrompt: '-1' };
+  assert.equal(validateDraft(current, { existingIDs: [], editingID: null }).models, 'errorMaxPrice');
+  current.models[0]!.routing = { slugs: [], fallback: true, maxPrompt: '', maxCompletion: 'abc' };
+  assert.equal(validateDraft(current, { existingIDs: [], editingID: null }).models, 'errorMaxPrice');
 });
 

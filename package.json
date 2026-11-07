@@ -1,8 +1,17 @@
 {
-  "name": "openchamber-providers",
-  "version": "2.1.2",
-  "private": true,
+  "name": "@simra/openchamber-providers",
+  "version": "2.2.0",
   "description": "OpenChamber Providers — manage custom OpenAI-compatible providers for OpenCode from an OpenChamber panel.",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://repo.simra.cloud/repository/simranpm/"
+  },
+  "files": [
+    "panel",
+    "service",
+    "icon.svg",
+    "README.md"
+  ],
   "openchamber": {
     "apiVersion": 1,
     "engines": {

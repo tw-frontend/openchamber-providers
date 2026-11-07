@@ -10,7 +10,7 @@ export type DraftErrors = {
   name?: 'errorName';
   baseURL?: 'errorBaseURL';
   apiKey?: 'errorAPIKey';
-  models?: 'errorModels' | 'errorModelsDuplicate' | 'errorModelsIncomplete' | 'errorLimits';
+  models?: 'errorModels' | 'errorModelsDuplicate' | 'errorModelsIncomplete' | 'errorLimits' | 'errorMaxPrice';
 };
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-_]*$/;
@@ -59,6 +59,18 @@ export const validateDraft = (draft: ProviderDraft, options: ValidateOptions): D
     || (model.output.trim() !== '' && positiveInt(model.output) === undefined)
   ));
   if (badLimits) errors.models = 'errorLimits';
+
+  // Routing max prices are dollars per million tokens: non-negative decimals.
+  const PRICE_PATTERN = /^\d+(\.\d+)?$/;
+  const badRouting = draft.models.some((model) => {
+    const routing = model.routing;
+    if (!routing) return false;
+    const maxPrompt = routing.maxPrompt?.trim() ?? '';
+    const maxCompletion = routing.maxCompletion?.trim() ?? '';
+    return (maxPrompt !== '' && !PRICE_PATTERN.test(maxPrompt))
+      || (maxCompletion !== '' && !PRICE_PATTERN.test(maxCompletion));
+  });
+  if (badRouting) errors.models = 'errorMaxPrice';
 
   return errors;
 };

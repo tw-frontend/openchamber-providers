@@ -21,6 +21,9 @@ unrelated settings are preserved byte for byte.
 - Provider ID, display name, API protocol, base URL and API key
 - Models with decimal context and output limits, upstream model ID, image input and tool calling
 - **Fetch** a provider's model list and pick the model ID from a dropdown, instead of typing it
+- **OpenRouter provider routing**: pick which providers serve an OpenRouter model, with
+  price per million tokens, throughput, latency and uptime per endpoint, and optional
+  per-request price caps (`body.provider` on the model entry)
 - Reasoning levels as clickable cards, written as OpenCode's own `capabilities.reasoning`;
   an existing custom package also gets the matching `variants`, since OpenCode derives none for it
 - Reads both `opencode.json` and `opencode.jsonc`; edits write back to the file they came from
@@ -49,6 +52,32 @@ git clone https://github.com/leoporoluo/openchamber-providers.git
 ```
 
 and paste the absolute path of the cloned folder into the same field.
+
+### Install from the Simra Nexus
+
+The package is published to the internal registry
+[`simranpm`](https://repo.simra.cloud/repository/simranpm/) as
+`@simra/openchamber-providers`. OpenChamber installs from a folder or a ZIP, so download
+the npm tarball, unpack it and point the extension folder at it:
+
+```bash
+npm pack @simra/openchamber-providers \
+  --registry=https://repo.simra.cloud/repository/simranpm/
+# or, without npm:
+curl -O https://repo.simra.cloud/repository/simranpm/@simra/openchamber-providers/-/openchamber-providers-2.2.0.tgz
+
+tar -xzf simra-openchamber-providers-2.2.0.tgz   # creates ./package
+```
+
+In OpenChamber: **Settings → Extensions → Folder**, paste the absolute path of the
+extracted `package` folder (the one containing `package.json`, `panel/` and `service/`),
+choose **Add** and approve the permissions as above.
+
+To keep a per-project `npmrc` for the registry instead:
+
+```ini
+@simra:registry=https://repo.simra.cloud/repository/simranpm/
+```
 
 ## Usage
 
@@ -90,6 +119,48 @@ browser is not used.
 `{env:…}` references only work when the variable is visible to the service process; a
 literal key is the simplest choice for Fetch.
 
+### OpenRouter provider routing
+
+On OpenRouter, one model is served by many providers with different prices, speeds and
+regions. When a provider's base URL points at `openrouter.ai`, each model card gains a
+**Providers** button. It asks the OpenRouter catalog
+(`GET /api/v1/models/{author}/{slug}/endpoints`) and lists every endpoint serving the
+model, with:
+
+- **Price** — prompt and completion dollars per million tokens (`$0.10 in · $0.32 out`)
+- **Speed** — output tokens per second and time to first token, as measured over the
+  last 30 minutes (dash when OpenRouter has no measurement yet)
+- **Uptime** and context window, plus the quantization (`fp8` …) and an `inactive` mark
+- Sorting by catalog order, total price, or measured speed
+
+Tick one or more endpoints — in click order — and choose **Apply**. The selection is
+written to the model entry's request-body overlay, which OpenCode merges into every
+request for that model:
+
+```jsonc
+'meta-llama/llama-3.3-70b-instruct': {
+  body: {
+    provider: {
+      only: ['deepinfra/turbo', 'together'],
+      order: ['deepinfra/turbo', 'together'],
+      allow_fallbacks: false,
+    },
+  },
+},
+```
+
+`only` restricts the router's provider pool to the picked endpoint slugs and `order`
+tries them in that order. The **Allow fallbacks** switch decides whether OpenRouter may
+still route to other providers when every picked one is unavailable; turn it off for a
+strict pin. Two optional **max price** fields cap the request (`max_price:
+{ prompt, completion }` in dollars per million tokens) so providers above the cap are
+skipped even without a slug selection. Clearing the selection removes the overlay and
+the model routes normally again.
+
+Body keys the panel does not manage (a hand-written `data_collection`, `quantizations`
+or extra `max_price` keys) survive edits, and an endpoint slug list read from an
+existing config round-trips into the picker.
+
 ### Built-in overrides
 
 A `providers.anthropic` entry that only sets `settings.baseURL` overrides a built-in
@@ -105,9 +176,12 @@ panel only reads and updates the OpenCode config files listed in its permission 
 **Fetch** is the one network action. It goes through a local service the host starts on
 demand: the panel sends the base URL, API key and protocol to the service over the host's
 loopback proxy, and the service makes one `GET` request to the provider's model endpoint.
-The service binds `127.0.0.1`, requires the host's bearer token, keeps no key and logs no
-request body. It is stopped with the app. Approve the service in **Settings → Extensions**
-to use Fetch; without that approval the rest of the panel still works.
+The OpenRouter provider list works the same way with `POST /providers`: the service makes
+one `GET` request to the OpenRouter catalog, sending the stored key only when one exists
+(the catalog is public). The service binds `127.0.0.1`, requires the host's bearer token,
+keeps no key and logs no request body. It is stopped with the app. Approve the service in
+**Settings → Extensions** to use Fetch; without that approval the rest of the panel still
+works.
 
 Writes are surgical: only `providers.<id>` is replaced (and a legacy `provider.<id>` twin
 removed), using `jsonc-parser` edits. The file is parsed before and after, so a broken file
