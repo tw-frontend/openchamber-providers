@@ -1,7 +1,29 @@
 /**
- * Pure helpers for the model-list request. No Node imports, so the core tests
- * can exercise them without starting the service.
+ * Pure helpers for the model-list and provider-endpoint requests, plus the
+ * outbound dispatcher: the cluster firewalls direct egress, so a fetch may
+ * need the standard proxy environment variables.
  */
+import { Agent, ProxyAgent, type Dispatcher } from 'undici';
+
+const PROXY_URL = process.env.HTTPS_PROXY ?? process.env.https_proxy
+  ?? process.env.HTTP_PROXY ?? process.env.http_proxy ?? '';
+const NO_PROXY = (process.env.NO_PROXY ?? process.env.no_proxy ?? '')
+  .split(',')
+  .map((entry) => entry.trim().toLowerCase().replace(/^\./, ''))
+  .filter(Boolean);
+
+const proxyDispatcher = PROXY_URL ? new ProxyAgent(PROXY_URL) : undefined;
+const directDispatcher = new Agent();
+
+/** Dispatcher for an outbound URL: the configured proxy, or a direct agent
+ * when the host appears in NO_PROXY. Undefined when no proxy is configured,
+ * which leaves the fetch on the runtime default. */
+export const dispatcherFor = (url: string): Dispatcher | undefined => {
+  if (!proxyDispatcher) return undefined;
+  const hostname = new URL(url).hostname.toLowerCase();
+  const bypass = NO_PROXY.some((entry) => hostname === entry || hostname.endsWith(`.${entry}`));
+  return bypass ? directDispatcher : proxyDispatcher;
+};
 
 /** URL candidates for a provider's model list, in the order to try them. */
 export const modelCandidates = (baseURL: string): string[] => {
@@ -119,11 +141,16 @@ const numberOrNull = (value: unknown): number | null => (
   typeof value === 'number' && Number.isFinite(value) ? value : null
 );
 
+/**
+ * A per-token price from the catalog, or null when there is none. OpenRouter
+ * writes `-1` (or a negative) when a price is not set, so non-positive values
+ * other than a real zero read as "no price" rather than a bogus cap.
+ */
 const priceOrNull = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 0 ? null : value;
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
+    if (Number.isFinite(parsed)) return parsed < 0 ? null : parsed;
   }
   return null;
 };

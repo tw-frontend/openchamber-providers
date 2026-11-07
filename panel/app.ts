@@ -143,7 +143,7 @@ export class ProviderPanel {
   private routerSelection = new Map<string, string[]>();
   private routerFallback = new Map<string, boolean>();
   private routerBusy: string | null = null;
-  private routerError: string | null = null;
+  private routerError = new Map<string, string>();
   private routerSort: RouterSort = 'default';
   /** Per-model max price inputs, dollars per million tokens. */
   private routerMaxPrompt = new Map<string, string>();
@@ -210,7 +210,7 @@ export class ProviderPanel {
       this.routerSelection.clear();
       this.routerFallback.clear();
       this.routerBusy = null;
-      this.routerError = null;
+      this.routerError.clear();
       this.routerSort = 'default';
       this.routerMaxPrompt.clear();
       this.routerMaxCompletion.clear();
@@ -277,7 +277,7 @@ export class ProviderPanel {
     this.routerSelection.clear();
     this.routerFallback.clear();
     this.routerBusy = null;
-    this.routerError = null;
+    this.routerError.clear();
     this.routerSort = 'default';
     this.routerMaxPrompt.clear();
     this.routerMaxCompletion.clear();
@@ -301,7 +301,7 @@ export class ProviderPanel {
     this.routerSelection.clear();
     this.routerFallback.clear();
     this.routerBusy = null;
-    this.routerError = null;
+    this.routerError.clear();
     this.routerSort = 'default';
     this.routerMaxPrompt.clear();
     this.routerMaxCompletion.clear();
@@ -322,7 +322,7 @@ export class ProviderPanel {
     this.routerSelection.clear();
     this.routerFallback.clear();
     this.routerBusy = null;
-    this.routerError = null;
+    this.routerError.clear();
     this.routerSort = 'default';
     this.routerMaxPrompt.clear();
     this.routerMaxCompletion.clear();
@@ -502,7 +502,7 @@ export class ProviderPanel {
     }
 
     this.routerBusy = modelKey;
-    this.routerError = null;
+    this.routerError.clear();
     this.paint();
     try {
       const endpoints = await this.host.fetchProviders({
@@ -516,7 +516,7 @@ export class ProviderPanel {
       // its saved order; slugs the catalog no longer reports drop away.
       const known = new Set(endpoints.map((endpoint) => endpoint.slug));
       this.routerSelection.set(modelKey, model.routing?.slugs.filter((slug) => known.has(slug)) ?? []);
-      this.routerFallback.set(modelKey, model.routing?.fallback ?? false);
+      this.routerFallback.set(modelKey, model.routing?.fallback ?? true);
       this.routerMaxPrompt.set(modelKey, model.routing?.maxPrompt ?? '');
       this.routerMaxCompletion.set(modelKey, model.routing?.maxCompletion ?? '');
     } catch (error) {
@@ -524,7 +524,7 @@ export class ProviderPanel {
       const message = error instanceof ModelFetchError && error.code === 'service'
         ? this.tr('fetchService')
         : errorText(error);
-      this.routerError = fill(this.tr('routerFailed'), { message });
+      this.routerError.set(modelKey, fill(this.tr('routerFailed'), { message }));
     } finally {
       this.routerBusy = null;
       this.paint();
@@ -538,7 +538,7 @@ export class ProviderPanel {
       this.routerFallback.delete(modelKey);
       this.routerMaxPrompt.delete(modelKey);
       this.routerMaxCompletion.delete(modelKey);
-      this.routerError = null;
+      this.routerError.delete(modelKey);
       this.paint();
       return;
     }
@@ -563,23 +563,21 @@ export class ProviderPanel {
     const slugs = this.routerSelection.get(modelKey) ?? [];
     const maxPrompt = this.routerMaxPrompt.get(modelKey)?.trim() ?? '';
     const maxCompletion = this.routerMaxCompletion.get(modelKey)?.trim() ?? '';
-    if (slugs.length > 0 || maxPrompt !== '' || maxCompletion !== '') {
-      model.routing = {
-        slugs,
-        fallback: this.routerFallback.get(modelKey) ?? false,
-        ...(maxPrompt !== '' && { maxPrompt }),
-        ...(maxCompletion !== '' && { maxCompletion }),
-      };
-    } else {
-      model.routing = undefined;
-    }
+    // Always a routing object: an empty selection is an explicit clear, so
+    // the picker-owned fields leave the body while hand-written ones stay.
+    model.routing = {
+      slugs,
+      fallback: this.routerFallback.get(modelKey) ?? true,
+      ...(maxPrompt !== '' && { maxPrompt }),
+      ...(maxCompletion !== '' && { maxCompletion }),
+    };
     if (this.errors.models) this.errors.models = undefined;
     this.routerEndpoints.delete(modelKey);
     this.routerSelection.delete(modelKey);
     this.routerFallback.delete(modelKey);
     this.routerMaxPrompt.delete(modelKey);
     this.routerMaxCompletion.delete(modelKey);
-    this.routerError = null;
+    this.routerError.delete(modelKey);
     this.paint();
   }
 
@@ -1253,6 +1251,12 @@ export class ProviderPanel {
     const fields = el('div', 'model-body');
     card.append(fields);
 
+    const routerError = this.routerError.get(model.key);
+    if (routerError) {
+      // A failed fetch leaves no picker; show the error on the card itself.
+      fields.append(this.notice('error', this.tr('routerTitle'), routerError));
+    }
+
     const picker = this.routerEndpoints.get(model.key);
     if (picker) fields.append(this.renderRouterPicker(model));
 
@@ -1415,10 +1419,6 @@ export class ProviderPanel {
     const hint = el('div', 'router-hint');
     hint.textContent = this.tr('routerHint');
     panel.append(hint);
-
-    if (this.routerError) {
-      panel.append(this.notice('error', this.tr('routerTitle'), this.routerError));
-    }
 
     const endpoints = sortEndpoints(this.routerEndpoints.get(model.key) ?? [], this.routerSort);
     const selection = this.routerSelection.get(model.key) ?? [];

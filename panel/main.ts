@@ -84,7 +84,10 @@ const panel = new ProviderPanel(root, {
     return body.endpoints.filter((item): item is RouterEndpoint => {
       if (!item || typeof item !== 'object') return false;
       const endpoint = item as Partial<RouterEndpoint>;
-      return typeof endpoint.slug === 'string' && typeof endpoint.providerName === 'string';
+      if (typeof endpoint.slug !== 'string' || typeof endpoint.providerName !== 'string') return false;
+      // Defense in depth: the panel sorts on `pricing` without guards, so a
+      // normalized endpoint must carry one even though the service does.
+      return !!endpoint.pricing && typeof endpoint.pricing === 'object';
     });
   },
 });

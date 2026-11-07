@@ -11,7 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { modelCandidates, modelHeaders, parseModelIDs, endpointCandidates, endpointHeaders, parseEndpoints, type RouterEndpoint } from './models';
+import { modelCandidates, modelHeaders, parseModelIDs, endpointCandidates, endpointHeaders, parseEndpoints, dispatcherFor, type RouterEndpoint } from './models';
 
 const PORT = Number(process.env.OPENCHAMBER_SERVICE_PORT ?? 0);
 const TOKEN = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
@@ -89,7 +89,8 @@ const requestPayload = async (url: string, headers: Record<string, string>): Pro
       headers,
       redirect: 'follow',
       signal: controller.signal,
-    });
+      dispatcher: dispatcherFor(url),
+    } as RequestInit);
     const text = await response.text();
     if (text.length > RESPONSE_MAX) {
       throw new ServiceError(502, 'The endpoint response is too large.');
@@ -183,7 +184,11 @@ const handleProviders = async (body: string): Promise<RouterEndpoint[]> => {
   if (!modelID) throw new ServiceError(400, 'Model ID is required.');
   const urls = endpointCandidates(baseURL, modelID);
   if (urls.length === 0) {
-    throw new ServiceError(400, 'Model ID must look like author/slug, e.g. meta-llama/llama-3.3-70b-instruct.');
+    // The two failure shapes have different causes; say the right one.
+    const badBase = !/^https?:\/\/\S+$/i.test(baseURL.trim().replace(/\/+$/, ''));
+    throw new ServiceError(400, badBase
+      ? 'Base URL must be an http(s) URL, e.g. https://openrouter.ai/api/v1.'
+      : 'Model ID must look like author/slug, e.g. meta-llama/llama-3.3-70b-instruct.');
   }
   return requestEndpoints(urls[0]!, apiKey);
 };

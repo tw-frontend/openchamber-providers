@@ -207,6 +207,16 @@ const imageInputOf = (model: JsonObject): boolean => {
  * price. A provider object without any of these is a hand-written routing
  * the picker does not own and reads as no selection.
  */
+/** Plain decimal text for a number, never exponent form (`1e-7` becomes
+ * `0.0000001`), so a numeric cap round-trips through the form validation. */
+const decimalString = (value: number): string => {
+  const text = String(value);
+  if (!/e/i.test(text)) return text;
+  return value.toFixed(Math.abs(value) < 1 ? 20 : 8)
+    .replace(/(\.\d*?)0+$/, '$1')
+    .replace(/\.$/, '');
+};
+
 const routingOf = (entry: JsonObject): { slugs: string[]; fallback: boolean; maxPrompt?: string; maxCompletion?: string } | undefined => {
   const body = isObject(entry.body) ? entry.body : undefined;
   const provider = body && isObject(body.provider) ? body.provider : undefined;
@@ -214,10 +224,10 @@ const routingOf = (entry: JsonObject): { slugs: string[]; fallback: boolean; max
   const slugs = [...new Set([...stringList(provider.only), ...stringList(provider.order)])];
   const maxPrice = isObject(provider.max_price) ? provider.max_price : undefined;
   const maxPrompt = maxPrice && typeof maxPrice.prompt === 'number' && Number.isFinite(maxPrice.prompt)
-    ? String(maxPrice.prompt)
+    ? decimalString(maxPrice.prompt)
     : undefined;
   const maxCompletion = maxPrice && typeof maxPrice.completion === 'number' && Number.isFinite(maxPrice.completion)
-    ? String(maxPrice.completion)
+    ? decimalString(maxPrice.completion)
     : undefined;
   if (slugs.length === 0 && maxPrompt === undefined && maxCompletion === undefined) return undefined;
   return {
@@ -452,43 +462,49 @@ const modelFor = (model: ModelDraft, previous: JsonObject, pkg: string): JsonObj
    * OpenRouter routing rides in the model's own request-body overlay, which
    * OpenCode merges into every request for this model: `only` restricts the
    * provider pool to the selection, `order` tries it in the picked order, and
-   * `max_price` caps the per-million price. Body keys the panel does not
-   * manage stay; clearing the selection drops `body.provider` but keeps the
-   * rest of the body.
+   * `max_price` caps the per-million price. Only the fields the picker owns
+   * (`only`, `order`, `allow_fallbacks`, `max_price`) are ever removed, and
+   * only when the panel read a routing from this body. A model whose
+   * `routing` is undefined — the picker never saw one, e.g. a hand-written
+   * `{ provider: { data_collection: 'deny' } }` — keeps its body exactly as
+   * found, on every save.
    */
   const body = isObject(entry.body) ? { ...entry.body } : undefined;
   const routing = model.routing;
   const slugs = routing?.slugs.filter((slug) => slug.trim() !== '') ?? [];
   const maxPrompt = routing?.maxPrompt?.trim() ?? '';
   const maxCompletion = routing?.maxCompletion?.trim() ?? '';
-  if (routing && (slugs.length > 0 || maxPrompt !== '' || maxCompletion !== '')) {
-    const previousProvider = body && isObject(body.provider) ? body.provider : {};
-    // Fields the picker does not manage (data_collection, quantizations, …)
-    // survive; max_price merges over any hand-written caps.
-    const providerOverlay: JsonObject = {};
-    for (const [key, value] of Object.entries(previousProvider)) {
+  const previousProvider = body && isObject(body.provider) ? body.provider : {};
+  // Fields the picker owns; everything else is hand-written and stays.
+  const stripOwned = (source: JsonObject): JsonObject => {
+    const rest: JsonObject = {};
+    for (const [key, value] of Object.entries(source)) {
       if (key !== 'only' && key !== 'order' && key !== 'allow_fallbacks' && key !== 'max_price') {
-        providerOverlay[key] = value;
+        rest[key] = value;
       }
     }
+    return rest;
+  };
+  if (routing) {
+    const providerOverlay = stripOwned(previousProvider);
     if (slugs.length > 0) {
       providerOverlay.only = [...slugs];
       providerOverlay.order = [...slugs];
       providerOverlay.allow_fallbacks = routing.fallback;
     }
     const previousMaxPrice = isObject(previousProvider.max_price) ? previousProvider.max_price : {};
+    // Inside max_price the picker owns only the prompt/completion caps.
     const maxPrice: JsonObject = {};
     for (const [key, value] of Object.entries(previousMaxPrice)) {
       if (key !== 'prompt' && key !== 'completion') maxPrice[key] = value;
     }
     if (maxPrompt !== '') maxPrice.prompt = Number(maxPrompt);
     if (maxCompletion !== '') maxPrice.completion = Number(maxCompletion);
-    if (maxPrompt !== '' || maxCompletion !== '') providerOverlay.max_price = maxPrice;
-    entry.body = { ...(body ?? {}), provider: providerOverlay };
-  } else if (body && isObject(body.provider)) {
-    const rest: JsonObject = { ...body };
-    delete rest.provider;
-    if (Object.keys(rest).length > 0) entry.body = rest;
+    if (Object.keys(maxPrice).length > 0) providerOverlay.max_price = maxPrice;
+    const nextBody: JsonObject = { ...(body ?? {}) };
+    if (Object.keys(providerOverlay).length > 0) nextBody.provider = providerOverlay;
+    else delete nextBody.provider;
+    if (Object.keys(nextBody).length > 0) entry.body = nextBody;
     else delete entry.body;
   }
 

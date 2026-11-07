@@ -60,15 +60,20 @@ export const validateDraft = (draft: ProviderDraft, options: ValidateOptions): D
   ));
   if (badLimits) errors.models = 'errorLimits';
 
-  // Routing max prices are dollars per million tokens: non-negative decimals.
-  const PRICE_PATTERN = /^\d+(\.\d+)?$/;
+  // Routing max prices are dollars per million tokens. Any finite decimal
+  // round-trips — exponent forms too (`1e-7`) — and negative values pass
+  // through: OpenRouter reads them as unset, and blocking every save over a
+  // hand-written sentinel would be worse than showing it.
   const badRouting = draft.models.some((model) => {
     const routing = model.routing;
     if (!routing) return false;
-    const maxPrompt = routing.maxPrompt?.trim() ?? '';
-    const maxCompletion = routing.maxCompletion?.trim() ?? '';
-    return (maxPrompt !== '' && !PRICE_PATTERN.test(maxPrompt))
-      || (maxCompletion !== '' && !PRICE_PATTERN.test(maxCompletion));
+    const cap = (value?: string): boolean => {
+      const text = value?.trim() ?? '';
+      if (text === '') return false;
+      const parsed = Number(text);
+      return !Number.isFinite(parsed);
+    };
+    return cap(routing.maxPrompt) || cap(routing.maxCompletion);
   });
   if (badRouting) errors.models = 'errorMaxPrice';
 

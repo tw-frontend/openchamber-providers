@@ -41,7 +41,7 @@ const seed = {
       sharellm_net: {
         name: 'sharellm.net',
         package: 'aisdk:@ai-sdk/openai-compatible',
-        settings: { baseURL: 'https://sharellm.net/v1', apiKey: 'sk-OMLcn4woAmbFqYXOPQ0hmKjgyy6WdYQKMLqCkCWTHGrISEKc' },
+        settings: { baseURL: 'https://sharellm.net/v1', apiKey: 'sk-preview-not-a-real-key' },
         models: {
           'deepseek-v4.1-flash': { modelID: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' },
         },

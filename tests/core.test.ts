@@ -752,7 +752,8 @@ test('clearing routing drops the provider overlay and keeps other body keys', ()
   };
   const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
   current.models.forEach((model) => {
-    model.routing = undefined;
+    // Clearing the picker is an explicit empty routing.
+    model.routing = { slugs: [], fallback: true };
   });
   const block = buildProvider(current, existing);
   const models = block.models as Record<string, Record<string, unknown>>;
@@ -793,13 +794,108 @@ test('hand-written provider keys survive a routing change', () => {
   });
 });
 
-test('max price rejects values that are not plain numbers', () => {
+test('max price rejects values that are not finite numbers', () => {
   const current = draft();
   current.models[0]!.routing = { slugs: [], fallback: true, maxPrompt: '0.5' };
   assert.equal(validateDraft(current, { existingIDs: [], editingID: null }).models, undefined);
+  // A negative cap is OpenRouter's unset sentinel: it round-trips and saves.
   current.models[0]!.routing = { slugs: [], fallback: true, maxPrompt: '-1' };
-  assert.equal(validateDraft(current, { existingIDs: [], editingID: null }).models, 'errorMaxPrice');
+  assert.equal(validateDraft(current, { existingIDs: [], editingID: null }).models, undefined);
   current.models[0]!.routing = { slugs: [], fallback: true, maxPrompt: '', maxCompletion: 'abc' };
   assert.equal(validateDraft(current, { existingIDs: [], editingID: null }).models, 'errorMaxPrice');
+});
+
+test('a routing the panel never read leaves the body untouched', () => {
+  const existing = {
+    settings: { baseURL: 'https://openrouter.ai/api/v1' },
+    models: {
+      a: { body: { temperature: 0.7, provider: { data_collection: 'deny' } } },
+      b: { body: { provider: { allow_fallbacks: false } } },
+      c: { body: { provider: { max_price: { image: 2 } } } },
+    },
+  };
+  const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
+  // None of these parse as a picker routing, so no save may rewrite them.
+  const models = current.models;
+  assert.equal(models.find((model) => model.id === 'a')!.routing, undefined);
+  assert.equal(models.find((model) => model.id === 'b')!.routing, undefined);
+  assert.equal(models.find((model) => model.id === 'c')!.routing, undefined);
+  const block = buildProvider(current, existing);
+  const written = block.models as Record<string, Record<string, unknown>>;
+  assert.deepEqual(written.a!.body, { temperature: 0.7, provider: { data_collection: 'deny' } });
+  assert.deepEqual(written.b!.body, { provider: { allow_fallbacks: false } });
+  assert.deepEqual(written.c!.body, { provider: { max_price: { image: 2 } } });
+});
+
+test('clearing the selection keeps hand-written extras', () => {
+  const existing = {
+    settings: { baseURL: 'https://openrouter.ai/api/v1' },
+    models: {
+      coder: {
+        body: {
+          temperature: 0.2,
+          provider: {
+            only: ['deepinfra'],
+            order: ['deepinfra'],
+            allow_fallbacks: false,
+            data_collection: 'deny',
+            max_price: { prompt: 1, image: 2 },
+          },
+        },
+      },
+    },
+  };
+  const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
+  current.models[0]!.routing = { slugs: [], fallback: true };
+  const block = buildProvider(current, existing);
+  const written = (block.models as Record<string, Record<string, unknown>>).coder!;
+  assert.deepEqual(written.body, {
+    temperature: 0.2,
+    provider: { data_collection: 'deny', max_price: { image: 2 } },
+  });
+});
+
+test('numeric max prices round-trip without blocking saves', () => {
+  const existing = {
+    settings: { baseURL: 'https://openrouter.ai/api/v1' },
+    models: {
+      coder: { body: { provider: { max_price: { prompt: 1e-7, completion: 2.5 } } } },
+    },
+  };
+  const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
+  assert.deepEqual(current.models[0]!.routing, {
+    slugs: [],
+    fallback: true,
+    maxPrompt: '0.0000001',
+    maxCompletion: '2.5',
+  });
+  const block = buildProvider(current, existing);
+  const written = (block.models as Record<string, Record<string, unknown>>).coder!;
+  assert.deepEqual(written.body, { provider: { max_price: { prompt: 1e-7, completion: 2.5 } } });
+  // And the form accepts the round-tripped text.
+  const check = draft();
+  check.models[0]!.routing = {
+    slugs: ['deepinfra'],
+    fallback: true,
+    maxPrompt: '0.0000001',
+    maxCompletion: '2.5',
+  };
+  assert.equal(validateDraft(check, { existingIDs: [], editingID: null }).models, undefined);
+});
+
+test('the -1 unset-pricing sentinel reads as no price', () => {
+  const endpoints = parseEndpoints({
+    data: {
+      endpoints: [{
+        provider_name: 'Alpha',
+        tag: 'alpha',
+        pricing: { prompt: '-1', completion: -1, input_cache_read: '0' },
+      }],
+    },
+  });
+  assert.deepEqual(endpoints[0]!.pricing, { prompt: null, completion: null, cacheRead: 0, discount: null });
+  // Neither a raw sentinel nor a normalized one may render as a bogus price.
+  assert.equal(priceText(-1), '—');
+  assert.equal(priceText(null), '—');
 });
 

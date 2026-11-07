@@ -30,7 +30,7 @@ export const perMillion = (value: number | null): number | null => (
 /** Price text for one direction: `$0.32`, `$14.00`, `$0.0002`, `—`. */
 export const priceText = (perToken: number | null): string => {
   const value = perMillion(perToken);
-  if (value === null) return '—';
+  if (value === null || value < 0) return '—';
   if (value === 0) return '$0';
   if (value >= 0.01) return `$${value.toFixed(2)}`;
   if (value >= 0.0001) return `$${value.toFixed(4)}`;
@@ -69,8 +69,8 @@ export type RouterSort = 'default' | 'price' | 'speed';
 
 /**
  * Endpoint order for display: catalog order, cheapest total price first, or
- * fastest measured throughput first. Endpoints without a measurement sink to
- * the end for speed and to the middle for price.
+ * fastest measured throughput first. Endpoints without the measurement sink
+ * to the end under both sorts.
  */
 export const sortEndpoints = (endpoints: readonly RouterEndpoint[], sort: RouterSort): RouterEndpoint[] => {
   if (sort === 'default') return [...endpoints];
