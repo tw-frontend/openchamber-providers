@@ -55,31 +55,23 @@ git clone https://github.com/tw-frontend/openchamber-providers.git
 
 and paste the absolute path of the cloned folder into the same field.
 
-### Install from the Simra Nexus
+### Install from a release
 
-The package is published to the internal registry
-[`simranpm`](https://repo.simra.cloud/repository/simranpm/) as
-`@simra/openchamber-providers`. OpenChamber installs from a folder or a ZIP, so download
-the npm tarball, unpack it and point the extension folder at it:
+Every version is published as a [GitHub Release](https://github.com/tw-frontend/openchamber-providers/releases)
+with two assets:
+
+- `openchamber-providers-2.2.0.zip` — the extension folder, laid out for the **ZIP** install
+- `simra-openchamber-providers-2.2.0.tgz` — the npm package, for a registry or manual extraction
+
+Download the ZIP and use **Settings → Extensions → ZIP**. Or unpack either archive and paste
+the folder that contains `package.json`, `panel/` and `service/` into the same field:
 
 ```bash
-npm pack @simra/openchamber-providers \
-  --registry=https://repo.simra.cloud/repository/simranpm/
-# or, without npm:
-curl -O https://repo.simra.cloud/repository/simranpm/@simra/openchamber-providers/-/openchamber-providers-2.2.0.tgz
-
 tar -xzf simra-openchamber-providers-2.2.0.tgz   # creates ./package
 ```
 
-In OpenChamber: **Settings → Extensions → Folder**, paste the absolute path of the
-extracted `package` folder (the one containing `package.json`, `panel/` and `service/`),
-choose **Add** and approve the permissions as above.
-
-To keep a per-project `npmrc` for the registry instead:
-
-```ini
-@simra:registry=https://repo.simra.cloud/repository/simranpm/
-```
+The releases are the same build that CI checks: the committed `panel/main.js` and
+`service/main.js` are what OpenChamber loads, so no build step is needed on install.
 
 ## Usage
 
