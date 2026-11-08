@@ -24,13 +24,13 @@ const panel = new ProviderPanel(root, {
   readFile: (path) => host.readFile(path),
   writeFile: (path, content) => host.writeFile(path, content),
   toast: async (request) => host.toast({ kind: request.kind, message: request.message }),
-  fetchModels: async ({ baseURL, apiKey, protocol }) => {
+  fetchModels: async ({ baseURL, apiKey, protocol, proxy }) => {
     let result: { status: number; body: string };
     try {
       result = await host.serviceRequest({
         method: 'POST',
         path: '/models',
-        body: JSON.stringify({ baseURL, apiKey, protocol }),
+        body: JSON.stringify({ baseURL, apiKey, protocol, proxy }),
       });
     } catch (error) {
       if (error instanceof HostRequestError && error.code === 'NO_SERVICE') {

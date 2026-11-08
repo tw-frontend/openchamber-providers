@@ -1,0 +1,411 @@
+{
+  "updated": "2026-11-04T15:00:00.000Z",
+  "rows": [
+    {
+      "rank": 1,
+      "name": "Claude Opus 5.5 (Max)",
+      "score": 23.377590042760453,
+      "organization": "Anthropic",
+      "sessions": 4351
+    },
+    {
+      "rank": 2,
+      "name": "Gemini 4 Carbon (High)",
+      "score": 15.855368484654011,
+      "organization": "Google",
+      "sessions": 14729
+    },
+    {
+      "rank": 3,
+      "name": "Claude Sonnet 5.5 (Max)",
+      "score": 15.745715520979736,
+      "organization": "Anthropic",
+      "sessions": 2650
+    },
+    {
+      "rank": 4,
+      "name": "GPT-6 Astra (Max)",
+      "score": 15.398166759701635,
+      "organization": "OpenAI",
+      "sessions": 4940
+    },
+    {
+      "rank": 5,
+      "name": "Claude Fable 5.1 (Max)",
+      "score": 13.988481012908021,
+      "organization": "Anthropic",
+      "sessions": 5179
+    },
+    {
+      "rank": 6,
+      "name": "GPT-6.1 Terra (Max)",
+      "score": 13.761269401398431,
+      "organization": "OpenAI",
+      "sessions": 7730
+    },
+    {
+      "rank": 7,
+      "name": "GPT-6.1 Sol (Max)",
+      "score": 12.252863114687553,
+      "organization": "OpenAI",
+      "sessions": 9494
+    },
+    {
+      "rank": 8,
+      "name": "GPT-6 Sol (Max)",
+      "score": 9.881212173087263,
+      "organization": "OpenAI",
+      "sessions": 4292
+    },
+    {
+      "rank": 9,
+      "name": "Muse Wonder Full (Max)",
+      "score": 9.52725172873869,
+      "organization": "Meta",
+      "sessions": 11453
+    },
+    {
+      "rank": 10,
+      "name": "Claude Fable 5 (High)",
+      "score": 8.689927287292896,
+      "organization": "Anthropic",
+      "sessions": 15109
+    },
+    {
+      "rank": 11,
+      "name": "Gemini 4 Argon (High)",
+      "score": 8.535223194763018,
+      "organization": "Google",
+      "sessions": 17975
+    },
+    {
+      "rank": 12,
+      "name": "Claude Opus 5 (Max)",
+      "score": 7.987433754404662,
+      "organization": "Anthropic",
+      "sessions": 9748
+    },
+    {
+      "rank": 13,
+      "name": "Hy4",
+      "score": 6.597155750042123,
+      "organization": "Tencent",
+      "sessions": 4120
+    },
+    {
+      "rank": 14,
+      "name": "Kimi K3.1 Pro (Max)",
+      "score": 6.574522748481105,
+      "organization": "Moonshot",
+      "sessions": 6662
+    },
+    {
+      "rank": 15,
+      "name": "GPT-5.6 Sol (xHigh)",
+      "score": 4.289646574900472,
+      "organization": "OpenAI",
+      "sessions": 13755
+    },
+    {
+      "rank": 16,
+      "name": "DeepSeek-V4.1-Flash-20261017 (Max)",
+      "score": 3.7929610631689523,
+      "organization": "DeepSeek",
+      "sessions": 26100
+    },
+    {
+      "rank": 17,
+      "name": "Claude Haiku 5.5 (High)",
+      "score": 3.678453686651734,
+      "organization": "Anthropic",
+      "sessions": 11909
+    },
+    {
+      "rank": 18,
+      "name": "Muse Spark 1.3 (Max)",
+      "score": 3.3073917564839808,
+      "organization": "Meta",
+      "sessions": 27290
+    },
+    {
+      "rank": 19,
+      "name": "Grok 4.7 (xHigh)",
+      "score": 3.296242721899766,
+      "organization": "SpaceXAI",
+      "sessions": 7033
+    },
+    {
+      "rank": 20,
+      "name": "Claude Sonnet 5 (High)",
+      "score": 3.035883535836186,
+      "organization": "Anthropic",
+      "sessions": 12612
+    },
+    {
+      "rank": 21,
+      "name": "Muse Wonder (Max)",
+      "score": 2.765742163791813,
+      "organization": "Meta",
+      "sessions": 4909
+    },
+    {
+      "rank": 22,
+      "name": "GPT-6 Luna (Max)",
+      "score": 2.734023223574687,
+      "organization": "OpenAI",
+      "sessions": 76648
+    },
+    {
+      "rank": 23,
+      "name": "MiMo-V2.6-Pro",
+      "score": 1.9877410463464158,
+      "organization": "Xiaomi",
+      "sessions": 17869
+    },
+    {
+      "rank": 24,
+      "name": "Hy4 preview",
+      "score": 1.8090768605465144,
+      "organization": "Tencent",
+      "sessions": 32478
+    },
+    {
+      "rank": 25,
+      "name": "GLM-5.2 (Max)",
+      "score": 1.705794224057755,
+      "organization": "Z.ai",
+      "sessions": 31267
+    },
+    {
+      "rank": 26,
+      "name": "GLM-5.3 (Max)",
+      "score": 1.4671980419209067,
+      "organization": "Z.ai",
+      "sessions": 32542
+    },
+    {
+      "rank": 27,
+      "name": "Grok 4.6 (xHigh)",
+      "score": 1.0420902349658245,
+      "organization": "SpaceXAI",
+      "sessions": 10297
+    },
+    {
+      "rank": 28,
+      "name": "MiMo-V2.6-Flash",
+      "score": 0.1732874579459735,
+      "organization": "Xiaomi",
+      "sessions": 10702
+    },
+    {
+      "rank": 29,
+      "name": "Kimi K3 (Max)",
+      "score": 0.0590570285390206,
+      "organization": "Moonshot",
+      "sessions": 52603
+    },
+    {
+      "rank": 30,
+      "name": "Qwen3.8-Max",
+      "score": -0.06189737786072634,
+      "organization": "Alibaba",
+      "sessions": 27861
+    },
+    {
+      "rank": 31,
+      "name": "DeepSeek-V4-Pro (High, 20260813)",
+      "score": -0.06667409950522617,
+      "organization": "DeepSeek",
+      "sessions": 2563
+    },
+    {
+      "rank": 32,
+      "name": "GPT-6 Luna (Medium)",
+      "score": -0.31416989477822355,
+      "organization": "OpenAI",
+      "sessions": 24215
+    },
+    {
+      "rank": 33,
+      "name": "Gemini 3.8 Flash (High)",
+      "score": -1.0925806271576712,
+      "organization": "Google",
+      "sessions": 16558
+    },
+    {
+      "rank": 34,
+      "name": "MiniMax-M3.1-Flash",
+      "score": -1.2489800631568817,
+      "organization": "MiniMax",
+      "sessions": 4619
+    },
+    {
+      "rank": 35,
+      "name": "GPT-5.6 Terra (xHigh)",
+      "score": -1.6350443613550112,
+      "organization": "OpenAI",
+      "sessions": 14228
+    },
+    {
+      "rank": 36,
+      "name": "Step 5 Preview",
+      "score": -1.9862031988764874,
+      "organization": "StepFun",
+      "sessions": 5898
+    },
+    {
+      "rank": 37,
+      "name": "GLM-5.3-Flash",
+      "score": -2.249614024954234,
+      "organization": "Z.ai",
+      "sessions": 34403
+    },
+    {
+      "rank": 38,
+      "name": "Qwen3.8-Flash-Next",
+      "score": -3.338616396706361,
+      "organization": "Alibaba",
+      "sessions": 35562
+    },
+    {
+      "rank": 39,
+      "name": "Qwen3.8-27B",
+      "score": -3.6956091351194367,
+      "organization": "Alibaba",
+      "sessions": 22358
+    },
+    {
+      "rank": 40,
+      "name": "Gemini 3.7 Flash (High)",
+      "score": -4.15221546839304,
+      "organization": "Google",
+      "sessions": 21735
+    },
+    {
+      "rank": 41,
+      "name": "GPT-6 Luna (Low)",
+      "score": -4.951891221926616,
+      "organization": "OpenAI",
+      "sessions": 15009
+    },
+    {
+      "rank": 42,
+      "name": "Hy3",
+      "score": -6.766408831009472,
+      "organization": "Tencent",
+      "sessions": 10163
+    },
+    {
+      "rank": 43,
+      "name": "Mistral Large 4",
+      "score": -6.883504055931662,
+      "organization": "Mistral",
+      "sessions": 1944
+    },
+    {
+      "rank": 44,
+      "name": "Beam 1.0 501B A23B",
+      "score": -7.0855108316013045,
+      "organization": "Reflection",
+      "sessions": 4182
+    },
+    {
+      "rank": 45,
+      "name": "Gemini 3.1 Pro Preview",
+      "score": -7.659546122393459,
+      "organization": "Google",
+      "sessions": 22200
+    },
+    {
+      "rank": 46,
+      "name": "Qwen3.7-Max",
+      "score": -7.768014783480816,
+      "organization": "Alibaba",
+      "sessions": 13844
+    },
+    {
+      "rank": 47,
+      "name": "Spark-X2.6",
+      "score": -8.778635799896984,
+      "organization": "XHToken",
+      "sessions": 3448
+    },
+    {
+      "rank": 48,
+      "name": "Muse Spark 1.2 (xHigh)",
+      "score": -8.785776269733379,
+      "organization": "Meta",
+      "sessions": 19330
+    },
+    {
+      "rank": 49,
+      "name": "MiMo-V2.5-Pro",
+      "score": -9.091345310031675,
+      "organization": "Xiaomi",
+      "sessions": 15720
+    },
+    {
+      "rank": 50,
+      "name": "Muse Spark 1.1",
+      "score": -9.659206077963365,
+      "organization": "Meta",
+      "sessions": 50266
+    },
+    {
+      "rank": 51,
+      "name": "Qwen3.7-Plus",
+      "score": -10.043463578411021,
+      "organization": "Alibaba",
+      "sessions": 7899
+    },
+    {
+      "rank": 52,
+      "name": "MiniMax-M3",
+      "score": -10.264718548325238,
+      "organization": "MiniMax",
+      "sessions": 13759
+    },
+    {
+      "rank": 53,
+      "name": "Mistral Medium 3.5",
+      "score": -15.486294348718413,
+      "organization": "Mistral",
+      "sessions": 4330
+    },
+    {
+      "rank": 54,
+      "name": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+      "score": -16.408107215857353,
+      "organization": "Nvidia",
+      "sessions": 9408
+    },
+    {
+      "rank": 55,
+      "name": "Nemotron 3 Ultra",
+      "score": -17.39065860430103,
+      "organization": "Nvidia",
+      "sessions": 3689
+    },
+    {
+      "rank": 56,
+      "name": "Inkling",
+      "score": -17.496101224656037,
+      "organization": "Thinky",
+      "sessions": 12765
+    },
+    {
+      "rank": 57,
+      "name": "Inkling-Small",
+      "score": -19.385763561153617,
+      "organization": "Thinky",
+      "sessions": 4345
+    },
+    {
+      "rank": 58,
+      "name": "Solar Pro 4",
+      "score": -23.858612414032006,
+      "organization": "Upstage",
+      "sessions": 3702
+    }
+  ]
+}

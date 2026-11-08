@@ -103,13 +103,15 @@ URL does not already end in `/v1`. OpenAI-compatible protocols send
 `Authorization: Bearer …`; **Anthropic Messages** sends `x-api-key` and
 `anthropic-version`. The response may be an array, `{ data: [...] }` or `{ models: [...] }`.
 
-An OpenRouter-shaped answer also carries each model's benchmarks. The dropdown sorts
-strictly by the Artificial Analysis **coding index**, strongest first, and shows that score
-beside the ID. The other metrics sit on different scales and are therefore labelled on the
-row instead of driving the order: the Artificial Analysis overall index as `AA total`, and
-the design-arena code ELO as `Arena code`. A model with neither is listed after the scored
-ones, alphabetically. A routing variant (`:nitro`, `:floor`, `:free`, `:batch`) is marked as
-the same model as its base and inherits the base's benchmarks.
+The dropdown orders models by the [arena.ai agent/code leaderboard](https://arena.ai/leaderboard/agent/code),
+strongest first: each listed model shows its net improvement over the baseline beside the ID and
+its leaderboard rank under it. Arena.ai challenges non-browser clients, so the extension ships a
+snapshot of the leaderboard (`service/arena-snapshot.json`); the local service re-reads it on every
+Fetch (kept for ten minutes) and falls back to the bundled copy, so scores keep working offline.
+`npm run arena:refresh` regenerates the snapshot from the page's React Server Components payload,
+and the scheduled *Arena snapshot* workflow runs it weekly. A model the leaderboard does not list
+is placed after the scored ones, alphabetically. A routing variant (`:nitro`, `:floor`, `:free`,
+`:batch`) is marked as the same model as its base and inherits the base's row.
 
 The request is made by a small local service (`service/main.js`) that OpenChamber starts on
 demand and stops with the app. It listens only on `127.0.0.1`, requires the host's token, and

@@ -5,3 +5,4 @@ Thumbs.db
 .test-build.cjs
 .openchamber/
 scripts/preview/preview.js
+scripts/arena-refresh.cjs

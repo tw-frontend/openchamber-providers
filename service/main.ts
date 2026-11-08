@@ -28,6 +28,14 @@ import {
   type RouterEndpoint,
 } from './models';
 
+import {
+  ARENA_SNAPSHOT_URL,
+  parseArenaSnapshot,
+  type ArenaRow,
+  type ArenaSnapshot,
+} from './arena';
+import bundledArena from './arena-snapshot.json';
+
 const PORT = Number(process.env.OPENCHAMBER_SERVICE_PORT ?? 0);
 const TOKEN = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
 const BODY_MAX = 64 * 1024;
@@ -148,9 +156,39 @@ const requestPayload = async (url: string, headers: Record<string, string>, prox
   }
 };
 
-const requestModels = async (url: string, protocol: string, apiKey: string): Promise<ModelOption[]> => {
+let arenaCache: { at: number; snapshot: ArenaSnapshot } | null = null;
+const ARENA_TTL_MS = 10 * 60 * 1000;
+const BUNDLED_ARENA = parseArenaSnapshot(bundledArena);
+
+/**
+ * The published agent/code leaderboard snapshot. Arena.ai sits behind a
+ * browser challenge, so the service never calls the site: it re-reads the
+ * snapshot committed to the repository on every Fetch (kept ten minutes) and
+ * falls back to the copy bundled at build time, so scores still show offline.
+ */
+const arenaSnapshot = async (proxy: string): Promise<ArenaSnapshot> => {
+  if (arenaCache && Date.now() - arenaCache.at < ARENA_TTL_MS) return arenaCache.snapshot;
+  try {
+    const text = await requestText(ARENA_SNAPSHOT_URL, { accept: 'application/json' }, proxy);
+    const snapshot = parseArenaSnapshot(text);
+    if (snapshot.rows.length > 0) {
+      arenaCache = { at: Date.now(), snapshot };
+      return snapshot;
+    }
+  } catch {
+    // Offline or nothing published yet: the bundled copy is the baseline.
+  }
+  return arenaCache?.snapshot ?? BUNDLED_ARENA;
+};
+
+const requestModels = async (
+  url: string,
+  protocol: string,
+  apiKey: string,
+  arena: ArenaRow[],
+): Promise<ModelOption[]> => {
   const payload = await requestPayload(url, modelHeaders(protocol, apiKey));
-  const models = parseModelOptions(payload);
+  const models = parseModelOptions(payload, arena);
   if (models.length === 0) {
     throw new ServiceError(502, 'The endpoint returned no model IDs.');
   }
@@ -183,11 +221,13 @@ const handleModels = async (body: string): Promise<ModelOption[]> => {
   if (!apiKey) throw new ServiceError(400, 'API key is required.');
   const urls = modelCandidates(baseURL);
   if (urls.length === 0) throw new ServiceError(400, 'Base URL must start with http:// or https://.');
+  const proxy = typeof request.proxy === 'string' ? request.proxy.trim() : '';
+  const arena = (await arenaSnapshot(proxy)).rows;
 
   let last: ServiceError | null = null;
   for (const url of urls) {
     try {
-      return await requestModels(url, protocol, apiKey);
+      return await requestModels(url, protocol, apiKey, arena);
     } catch (error) {
       const failure = error instanceof ServiceError ? error : new ServiceError(502, String(error));
       last = failure;

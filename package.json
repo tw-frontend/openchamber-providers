@@ -1,7 +1,7 @@
 {
   "name": "@simra/openchamber-providers",
-  "version": "2.3.1",
-  "description": "OpenChamber Providers — manage custom OpenAI-compatible providers for OpenCode from an OpenChamber panel.",
+  "version": "2.4.0",
+  "description": "OpenChamber Providers \u2014 manage custom OpenAI-compatible providers for OpenCode from an OpenChamber panel.",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://repo.simra.cloud/repository/simranpm/"
@@ -41,7 +41,8 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.service.json",
     "test": "esbuild tests/core.test.ts --bundle --platform=node --format=cjs --main-fields=module,main --outfile=.test-build.cjs && node --test .test-build.cjs",
     "preview": "esbuild scripts/preview/preview.ts --bundle --format=iife --platform=browser --target=es2020 --charset=utf8 --outfile=scripts/preview/preview.js",
-    "check": "npm run typecheck && npm test && npm run build && npm run preview"
+    "check": "npm run typecheck && npm test && npm run build && npm run preview",
+    "arena:refresh": "esbuild scripts/arena-refresh.ts --bundle --platform=node --format=cjs --outfile=scripts/arena-refresh.cjs --log-level=warning && node scripts/arena-refresh.cjs"
   },
   "devDependencies": {
     "@openchamber/sdk": "^2.0.0",

@@ -19,6 +19,7 @@ import { modelCandidates, modelHeaders, parseModelIDs, parseModelOptions } from 
 import { endpointCandidates, endpointHeaders, parseEndpoints } from '../service/models';
 import { modelPageCandidates, parseEndpointStats, mergeEndpointStats } from '../service/models';
 import { modelScoreText, sortModelOptions } from '../panel/core/modellist';
+import { arenaRowFor, parseArenaLeaderboard, parseArenaSnapshot } from '../service/arena';
 import {
   contextText,
   isRouterBaseURL,
@@ -573,79 +574,116 @@ test('model IDs are read from the shapes gateways return', () => {
   assert.deepEqual(parseModelIDs({ data: [] }), []);
 });
 
-test('model options carry the coding, total and arena scores and a variant base', () => {
+test('model options carry the arena leaderboard row and a variant base', () => {
   const payload = {
     data: [
-      {
-        id: 'vendor/base',
-        name: 'Vendor Base',
-        benchmarks: {
-          artificial_analysis: { coding_index: 71.5, intelligence_index: 80 },
-          design_arena: [
-            { category: 'gamedev', elo: 1200 },
-            { category: 'codecategories', elo: 1263 },
-          ],
-        },
-      },
+      { id: 'vendor/base', name: 'Vendor Base' },
       { id: 'vendor/base:nitro', name: 'Vendor Base (Nitro)' },
-      {
-        id: 'vendor/base:floor',
-        benchmarks: { artificial_analysis: { coding_index: null, intelligence_index: 64.2 } },
-      },
-      { id: 'vendor/idle', benchmarks: { artificial_analysis: { intelligence_index: 52 } } },
+      { id: 'vendor/base:floor' },
+      { id: 'vendor/idle' },
       { id: 'vendor/plain' },
       { id: 'vendor/base' },
     ],
   };
-  const options = parseModelOptions(payload);
+  const arena = [
+    { rank: 3, name: 'Vendor Base (Max)', score: 23.38, sessions: 4351 },
+    { rank: 9, name: 'Vendor Idle', score: 1.2 },
+  ];
+  const options = parseModelOptions(payload, arena);
   assert.deepEqual(
     options.map((option) => option.id),
     ['vendor/base', 'vendor/base:nitro', 'vendor/base:floor', 'vendor/idle', 'vendor/plain'],
   );
-  assert.equal(options[0].coding, 71.5);
-  assert.equal(options[0].total, 80);
-  assert.equal(options[0].arenaCode, 1263);
+  // The leaderboard names models the way people do: tuning suffix and
+  // punctuation do not stop the match.
+  assert.deepEqual(options[0].arena, { rank: 3, name: 'Vendor Base (Max)', score: 23.38, sessions: 4351 });
   assert.equal(options[0].name, 'Vendor Base');
   assert.equal(options[0].sameAs, undefined);
-  // A variant carries the base's benchmarks and names its base.
-  assert.equal(options[1].coding, 71.5);
-  assert.equal(options[1].total, 80);
-  assert.equal(options[1].arenaCode, 1263);
+  // A variant carries the base's row and names its base.
+  assert.deepEqual(options[1].arena, options[0].arena);
   assert.equal(options[1].sameAs, 'vendor/base');
-  // A variant with its own total keeps it, and still inherits the missing
-  // coding score from its base.
-  assert.equal(options[2].coding, 71.5);
-  assert.equal(options[2].total, 64.2);
-  assert.equal(options[2].arenaCode, 1263);
+  assert.deepEqual(options[2].arena, options[0].arena);
   assert.equal(options[2].sameAs, 'vendor/base');
-  // A total without a coding score is display-only and does not sort.
-  assert.equal(options[3].coding, undefined);
-  assert.equal(options[3].total, 52);
-  assert.equal(options[3].arenaCode, undefined);
-  assert.equal(options[4].coding, undefined);
+  // A model the leaderboard lists on its own carries its own row.
+  assert.equal(options[3].arena?.rank, 9);
+  assert.equal(options[4].arena, undefined);
   assert.equal(options[4].sameAs, undefined);
-  // The shapes that carry no benchmarks keep their IDs only.
+  // The shapes that carry no names keep their IDs only.
   assert.deepEqual(
-    parseModelOptions(['plain', { model: 'other' }]).map((option) => [option.id, option.coding]),
+    parseModelOptions(['plain', { model: 'other' }]).map((option) => [option.id, option.arena]),
     [['plain', undefined], ['other', undefined]],
   );
 });
 
-test('the picker sorts by the coding index only, strongest first', () => {
+test('the picker sorts by the leaderboard score, strongest first', () => {
   const options = [
-    { id: 'b/unscored', total: 90 },
-    { id: 'a/low', coding: 40 },
-    { id: 'c/high', coding: 71.5 },
-    { id: 'd/unscored', arenaCode: 1300 },
-    { id: 'e/tie', coding: 40 },
+    { id: 'b/unscored' },
+    { id: 'a/low', arena: { rank: 40, name: 'A Low', score: 4.2 } },
+    { id: 'c/high', arena: { rank: 1, name: 'C High', score: 23.38 } },
+    { id: 'd/unscored2' },
+    { id: 'e/tie', arena: { rank: 41, name: 'E Tie', score: 4.2 } },
   ];
   assert.deepEqual(
     sortModelOptions(options).map((option) => option.id),
-    ['c/high', 'a/low', 'e/tie', 'b/unscored', 'd/unscored'],
+    ['c/high', 'a/low', 'e/tie', 'b/unscored', 'd/unscored2'],
   );
-  assert.equal(modelScoreText(71.5), '71.5');
-  assert.equal(modelScoreText(70), '70');
+  assert.equal(modelScoreText(23.38), '23.4');
+  assert.equal(modelScoreText(70), '70.0');
   assert.equal(modelScoreText(undefined), '—');
+});
+
+test('the leaderboard snapshot is read from the RSC payload', () => {
+  const payload = 'a:{"snapshot":{"lastUpdated":"2026-11-04T15:00:00.000Z","rows":['
+    + '{"rank":2,"model":"B Model","modelOrganization":"Beta","avgScore":{"value":0.1234,"ci":0.01},"sessions":120},'
+    + '{"rank":1,"model":"A Model","avgScore":{"value":0.25}},'
+    + '{"rank":3,"model":"","avgScore":{"value":0.5}}'
+    + ']}}\n';
+  const snapshot = parseArenaLeaderboard(payload);
+  assert.equal(snapshot.updated, '2026-11-04T15:00:00.000Z');
+  assert.deepEqual(snapshot.rows, [
+    { rank: 1, name: 'A Model', score: 25 },
+    { rank: 2, name: 'B Model', organization: 'Beta', score: 12.34, sessions: 120 },
+  ]);
+  assert.deepEqual(parseArenaLeaderboard('nothing here').rows, []);
+  assert.deepEqual(parseArenaLeaderboard('x:{"snapshot":{').rows, []);
+});
+
+test('the published snapshot reads rows from an object or a string', () => {
+  const snapshot = parseArenaSnapshot({
+    updated: '2026-11-04T15:00:00.000Z',
+    rows: [
+      { rank: 2, name: 'B Model', score: 12.5, organization: 'Beta', sessions: 10 },
+      { rank: 1, name: 'A Model', score: 25 },
+      { rank: 3, name: '' },
+    ],
+  });
+  assert.equal(snapshot.updated, '2026-11-04T15:00:00.000Z');
+  assert.deepEqual(snapshot.rows, [
+    { rank: 1, name: 'A Model', score: 25 },
+    { rank: 2, name: 'B Model', score: 12.5, organization: 'Beta', sessions: 10 },
+  ]);
+  assert.deepEqual(
+    parseArenaSnapshot('{"rows":[{"rank":1,"name":"A","score":2}]}').rows,
+    [{ rank: 1, name: 'A', score: 2 }],
+  );
+  assert.deepEqual(parseArenaSnapshot('not json').rows, []);
+  assert.deepEqual(parseArenaSnapshot(null).rows, []);
+});
+
+test('leaderboard rows match model IDs by name, ignoring tuning and dates', () => {
+  const rows = [
+    { rank: 1, name: 'Claude Fable 5.1 (Max)', score: 14 },
+    { rank: 2, name: 'DeepSeek-V4.1-Flash-20261017 (Max)', score: 3.79 },
+    { rank: 3, name: 'GLM-5.3 (Max)', score: 1.47 },
+  ];
+  assert.equal(arenaRowFor('anthropic/claude-fable-5.1', rows)?.rank, 1);
+  assert.equal(arenaRowFor('deepseek/deepseek-v4.1-flash-1017', rows)?.rank, 2);
+  assert.equal(arenaRowFor('z-ai/glm-5.3', rows)?.rank, 3);
+  assert.equal(arenaRowFor('vendor/unknown', rows), undefined);
+  // A variant is scored through its base, not through its own suffix.
+  const variant = parseModelOptions([{ id: 'z-ai/glm-5.3' }, { id: 'z-ai/glm-5.3:nitro' }], rows);
+  assert.equal(variant[1].arena?.rank, 3);
+  assert.equal(variant[1].sameAs, 'z-ai/glm-5.3');
 });
 
 /* ----------------------------------------------------------- router catalog */

@@ -4,6 +4,7 @@
  * need the standard proxy environment variables.
  */
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
+import { arenaRowFor, type ArenaRow } from './arena';
 
 const PROXY_URL = process.env.HTTPS_PROXY ?? process.env.https_proxy
   ?? process.env.HTTP_PROXY ?? process.env.http_proxy ?? '';
@@ -108,22 +109,17 @@ export const parseModelIDs = (payload: unknown): string[] => {
 
 /**
  * One entry of the model picker: the routing ID, the provider's display name
- * when it sends one, the benchmarks the catalog publishes, and — for a routing
- * variant such as `:nitro` or `:floor` — the model it really serves.
+ * when it sends one, the arena.ai agent/code leaderboard row that ranks it, and
+ * — for a routing variant such as `:nitro` or `:floor` — the model it serves.
  *
- * The scores sit on different scales, so they stay separate: `coding` (the
- * Artificial Analysis coding index) is the only sorting key, `total` is the
- * overall index and `arenaCode` the design-arena code ELO.
+ * Only the arena leaderboard scores models here: benchmark numbers some catalog
+ * payloads carry belong to older benchmark versions, so they are ignored.
  */
 export type ModelOption = {
   id: string;
   name?: string;
-  /** Artificial Analysis coding index (0–100): the picker's sort key. */
-  coding?: number;
-  /** Artificial Analysis overall index (0–100); shown, never used for order. */
-  total?: number;
-  /** design_arena `codecategories` ELO (roughly 1100–1600). */
-  arenaCode?: number;
+  /** Agent/code leaderboard row (rank and net improvement) when listed there. */
+  arena?: ArenaRow;
   /** Base model ID when `id` carries a `:variant` suffix. */
   sameAs?: string;
 };
@@ -134,41 +130,8 @@ export const baseModelID = (id: string): string => {
   return index > 0 ? id.slice(0, index) : id;
 };
 
-const finite = (value: unknown): number | undefined =>
-  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-
-/**
- * Benchmarks the catalog attaches to an OpenRouter model. Artificial Analysis
- * reports an overall intelligence index and a coding index, both 0–100; the
- * design arena reports ELO per category, of which `codecategories` is coding.
- */
-const benchmarksOf = (item: unknown): Pick<ModelOption, 'coding' | 'total' | 'arenaCode'> => {
-  const found: Pick<ModelOption, 'coding' | 'total' | 'arenaCode'> = {};
-  if (!item || typeof item !== 'object') return found;
-  const benchmarks = (item as Record<string, unknown>).benchmarks;
-  if (!benchmarks || typeof benchmarks !== 'object') return found;
-  const analysis = (benchmarks as Record<string, unknown>).artificial_analysis;
-  if (analysis && typeof analysis === 'object') {
-    const coding = finite((analysis as Record<string, unknown>).coding_index);
-    const total = finite((analysis as Record<string, unknown>).intelligence_index);
-    if (coding !== undefined) found.coding = coding;
-    if (total !== undefined) found.total = total;
-  }
-  const arena = (benchmarks as Record<string, unknown>).design_arena;
-  if (Array.isArray(arena)) {
-    const code = arena.find((entry) => (
-      entry !== null
-      && typeof entry === 'object'
-      && (entry as Record<string, unknown>).category === 'codecategories'
-    ));
-    const elo = code ? finite((code as Record<string, unknown>).elo) : undefined;
-    if (elo !== undefined) found.arenaCode = elo;
-  }
-  return found;
-};
-
 /** Model options from the shapes OpenAI, Anthropic and compatible gateways return. */
-export const parseModelOptions = (payload: unknown): ModelOption[] => {
+export const parseModelOptions = (payload: unknown, arena: ArenaRow[] = []): ModelOption[] => {
   const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
   const list = Array.isArray(payload)
     ? payload
@@ -185,21 +148,20 @@ export const parseModelOptions = (payload: unknown): ModelOption[] => {
     const option: ModelOption = { id };
     const name = item && typeof item === 'object' ? (item as Record<string, unknown>).name : undefined;
     if (typeof name === 'string' && name.trim()) option.name = name.trim();
-    Object.assign(option, benchmarksOf(item));
+    const row = arenaRowFor(id, arena);
+    if (row) option.arena = row;
     byID.set(id, option);
     options.push(option);
   }
   // `:nitro` and `:floor` route to the same model, so they carry its
-  // benchmarks and say which model that is.
+  // leaderboard row and say which model that is.
   for (const option of options) {
     const base = baseModelID(option.id);
     if (base === option.id) continue;
     option.sameAs = base;
     const source = byID.get(base);
     if (!source) continue;
-    if (option.coding === undefined) option.coding = source.coding;
-    if (option.total === undefined) option.total = source.total;
-    if (option.arenaCode === undefined) option.arenaCode = source.arenaCode;
+    if (!option.arena) option.arena = source.arena;
   }
   return options;
 };
