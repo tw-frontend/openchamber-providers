@@ -18,7 +18,7 @@ import { validateDraft } from '../panel/core/validate';
 import { modelCandidates, modelHeaders, parseModelIDs, parseModelOptions } from '../service/models';
 import { endpointCandidates, endpointHeaders, parseEndpoints } from '../service/models';
 import { modelPageCandidates, parseEndpointStats, mergeEndpointStats } from '../service/models';
-import { modelScoreText, sortModelOptions } from '../panel/core/modellist';
+import { sortModelOptions } from '../panel/core/modellist';
 import { arenaRowFor, parseArenaLeaderboard, parseArenaSnapshot } from '../service/arena';
 import {
   contextText,
@@ -627,9 +627,6 @@ test('the picker sorts by the leaderboard score, strongest first', () => {
     sortModelOptions(options).map((option) => option.id),
     ['c/high', 'a/low', 'e/tie', 'b/unscored', 'd/unscored2'],
   );
-  assert.equal(modelScoreText(23.38), '23.4');
-  assert.equal(modelScoreText(70), '70.0');
-  assert.equal(modelScoreText(undefined), '—');
 });
 
 test('the leaderboard snapshot is read from the RSC payload', () => {

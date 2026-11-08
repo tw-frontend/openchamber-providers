@@ -12,9 +12,3 @@ export const sortModelOptions = (options: ModelOption[]): ModelOption[] =>
     if (leftScore !== rightScore) return rightScore - leftScore;
     return left.id.localeCompare(right.id);
   });
-
-/** A score as the picker shows it: an em dash when the leaderboard has none. */
-export const modelScoreText = (score?: number): string => {
-  if (score === undefined) return '—';
-  return score.toFixed(1);
-};

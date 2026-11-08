@@ -36,7 +36,7 @@ import {
 } from './core/provider';
 import { PROTOCOLS, packageLabel, type ProtocolId } from './core/protocols';
 import type { ModelOption, RouterEndpoint } from '../service/models';
-import { modelScoreText, sortModelOptions } from './core/modellist';
+import { sortModelOptions } from './core/modellist';
 import {
   contextText,
   isRouterBaseURL,
@@ -1310,10 +1310,7 @@ export class ProviderPanel {
       const currentID = model.id.trim();
       const ordered = sortModelOptions(this.modelOptions);
       const options: SelectOption[] = ordered.map((option) => {
-        const entry: SelectOption = {
-          id: option.id,
-          label: option.arena === undefined ? option.id : `${modelScoreText(option.arena.score)}% · ${option.id}`,
-        };
+        const entry: SelectOption = { id: option.id, label: option.id };
         const parts: string[] = [];
         if (option.arena !== undefined) {
           parts.push(fill(this.tr('modelArenaRank'), { rank: String(option.arena.rank) }));

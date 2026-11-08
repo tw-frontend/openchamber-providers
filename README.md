@@ -107,8 +107,7 @@ URL does not already end in `/v1`. OpenAI-compatible protocols send
 `anthropic-version`. The response may be an array, `{ data: [...] }` or `{ models: [...] }`.
 
 The dropdown orders models by the [arena.ai agent/code leaderboard](https://arena.ai/leaderboard/agent/code),
-strongest first: each listed model shows its net improvement over the baseline beside the ID and
-its leaderboard rank under it. Arena.ai challenges non-browser clients, so the extension ships a
+strongest first: each listed model shows its leaderboard rank under the ID. Arena.ai challenges non-browser clients, so the extension ships a
 snapshot of the leaderboard (`service/arena-snapshot.json`); the local service re-reads it on every
 Fetch (kept for ten minutes) and falls back to the bundled copy, so scores keep working offline.
 `npm run arena:refresh` regenerates the snapshot from the page's React Server Components payload;
