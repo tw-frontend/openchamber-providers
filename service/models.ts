@@ -108,14 +108,22 @@ export const parseModelIDs = (payload: unknown): string[] => {
 
 /**
  * One entry of the model picker: the routing ID, the provider's display name
- * when it sends one, the coding score the catalog publishes for it, and — for
- * a routing variant such as `:nitro` or `:floor` — the model it really serves.
+ * when it sends one, the benchmarks the catalog publishes, and — for a routing
+ * variant such as `:nitro` or `:floor` — the model it really serves.
+ *
+ * The scores sit on different scales, so they stay separate: `coding` (the
+ * Artificial Analysis coding index) is the only sorting key, `total` is the
+ * overall index and `arenaCode` the design-arena code ELO.
  */
 export type ModelOption = {
   id: string;
   name?: string;
-  /** Artificial Analysis coding index, falling back to its intelligence index. */
-  score?: number;
+  /** Artificial Analysis coding index (0–100): the picker's sort key. */
+  coding?: number;
+  /** Artificial Analysis overall index (0–100); shown, never used for order. */
+  total?: number;
+  /** design_arena `codecategories` ELO (roughly 1100–1600). */
+  arenaCode?: number;
   /** Base model ID when `id` carries a `:variant` suffix. */
   sameAs?: string;
 };
@@ -126,22 +134,37 @@ export const baseModelID = (id: string): string => {
   return index > 0 ? id.slice(0, index) : id;
 };
 
+const finite = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
 /**
- * Artificial Analysis scores the catalog attaches to an OpenRouter model.
- * `coding_index` is the coding benchmark; `intelligence_index` covers the
- * models it has not scored for coding yet. Both sit on the same 0–100 scale.
+ * Benchmarks the catalog attaches to an OpenRouter model. Artificial Analysis
+ * reports an overall intelligence index and a coding index, both 0–100; the
+ * design arena reports ELO per category, of which `codecategories` is coding.
  */
-const benchmarkScore = (item: unknown): number | undefined => {
-  if (!item || typeof item !== 'object') return undefined;
+const benchmarksOf = (item: unknown): Pick<ModelOption, 'coding' | 'total' | 'arenaCode'> => {
+  const found: Pick<ModelOption, 'coding' | 'total' | 'arenaCode'> = {};
+  if (!item || typeof item !== 'object') return found;
   const benchmarks = (item as Record<string, unknown>).benchmarks;
-  if (!benchmarks || typeof benchmarks !== 'object') return undefined;
+  if (!benchmarks || typeof benchmarks !== 'object') return found;
   const analysis = (benchmarks as Record<string, unknown>).artificial_analysis;
-  if (!analysis || typeof analysis !== 'object') return undefined;
-  for (const key of ['coding_index', 'intelligence_index']) {
-    const value = (analysis as Record<string, unknown>)[key];
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (analysis && typeof analysis === 'object') {
+    const coding = finite((analysis as Record<string, unknown>).coding_index);
+    const total = finite((analysis as Record<string, unknown>).intelligence_index);
+    if (coding !== undefined) found.coding = coding;
+    if (total !== undefined) found.total = total;
   }
-  return undefined;
+  const arena = (benchmarks as Record<string, unknown>).design_arena;
+  if (Array.isArray(arena)) {
+    const code = arena.find((entry) => (
+      entry !== null
+      && typeof entry === 'object'
+      && (entry as Record<string, unknown>).category === 'codecategories'
+    ));
+    const elo = code ? finite((code as Record<string, unknown>).elo) : undefined;
+    if (elo !== undefined) found.arenaCode = elo;
+  }
+  return found;
 };
 
 /** Model options from the shapes OpenAI, Anthropic and compatible gateways return. */
@@ -162,18 +185,21 @@ export const parseModelOptions = (payload: unknown): ModelOption[] => {
     const option: ModelOption = { id };
     const name = item && typeof item === 'object' ? (item as Record<string, unknown>).name : undefined;
     if (typeof name === 'string' && name.trim()) option.name = name.trim();
-    const score = benchmarkScore(item);
-    if (score !== undefined) option.score = score;
+    Object.assign(option, benchmarksOf(item));
     byID.set(id, option);
     options.push(option);
   }
-  // `:nitro` and `:floor` route to the same model, so they carry its score and
-  // say which model that is.
+  // `:nitro` and `:floor` route to the same model, so they carry its
+  // benchmarks and say which model that is.
   for (const option of options) {
     const base = baseModelID(option.id);
     if (base === option.id) continue;
     option.sameAs = base;
-    if (option.score === undefined) option.score = byID.get(base)?.score;
+    const source = byID.get(base);
+    if (!source) continue;
+    if (option.coding === undefined) option.coding = source.coding;
+    if (option.total === undefined) option.total = source.total;
+    if (option.arenaCode === undefined) option.arenaCode = source.arenaCode;
   }
   return options;
 };

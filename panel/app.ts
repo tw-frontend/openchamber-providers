@@ -1300,9 +1300,17 @@ export class ProviderPanel {
       const options: SelectOption[] = ordered.map((option) => {
         const entry: SelectOption = {
           id: option.id,
-          label: option.score === undefined ? option.id : `${modelScoreText(option.score)} · ${option.id}`,
+          label: option.coding === undefined ? option.id : `${modelScoreText(option.coding)} · ${option.id}`,
         };
-        if (option.sameAs) entry.hint = fill(this.tr('modelSameAs'), { model: option.sameAs });
+        const parts: string[] = [];
+        if (option.total !== undefined) {
+          parts.push(fill(this.tr('modelTotal'), { score: modelScoreText(option.total) }));
+        }
+        if (option.arenaCode !== undefined) {
+          parts.push(fill(this.tr('modelArenaCode'), { score: modelScoreText(option.arenaCode) }));
+        }
+        if (option.sameAs) parts.push(fill(this.tr('modelSameAs'), { model: option.sameAs }));
+        if (parts.length > 0) entry.hint = parts.join(' · ');
         return entry;
       });
       if (currentID && !ordered.some((option) => option.id === currentID)) {

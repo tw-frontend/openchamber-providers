@@ -573,13 +573,19 @@ test('model IDs are read from the shapes gateways return', () => {
   assert.deepEqual(parseModelIDs({ data: [] }), []);
 });
 
-test('model options carry the coding score, name and base of a variant', () => {
+test('model options carry the coding, total and arena scores and a variant base', () => {
   const payload = {
     data: [
       {
         id: 'vendor/base',
         name: 'Vendor Base',
-        benchmarks: { artificial_analysis: { coding_index: 71.5, intelligence_index: 80 } },
+        benchmarks: {
+          artificial_analysis: { coding_index: 71.5, intelligence_index: 80 },
+          design_arena: [
+            { category: 'gamedev', elo: 1200 },
+            { category: 'codecategories', elo: 1263 },
+          ],
+        },
       },
       { id: 'vendor/base:nitro', name: 'Vendor Base (Nitro)' },
       {
@@ -596,31 +602,42 @@ test('model options carry the coding score, name and base of a variant', () => {
     options.map((option) => option.id),
     ['vendor/base', 'vendor/base:nitro', 'vendor/base:floor', 'vendor/idle', 'vendor/plain'],
   );
-  assert.equal(options[0].score, 71.5);
+  assert.equal(options[0].coding, 71.5);
+  assert.equal(options[0].total, 80);
+  assert.equal(options[0].arenaCode, 1263);
   assert.equal(options[0].name, 'Vendor Base');
   assert.equal(options[0].sameAs, undefined);
-  assert.equal(options[1].score, 71.5);
+  // A variant carries the base's benchmarks and names its base.
+  assert.equal(options[1].coding, 71.5);
+  assert.equal(options[1].total, 80);
+  assert.equal(options[1].arenaCode, 1263);
   assert.equal(options[1].sameAs, 'vendor/base');
-  assert.equal(options[2].score, 64.2);
+  // A variant with its own total keeps it, and still inherits the missing
+  // coding score from its base.
+  assert.equal(options[2].coding, 71.5);
+  assert.equal(options[2].total, 64.2);
+  assert.equal(options[2].arenaCode, 1263);
   assert.equal(options[2].sameAs, 'vendor/base');
-  assert.equal(options[3].score, 52);
-  assert.equal(options[3].sameAs, undefined);
-  assert.equal(options[4].score, undefined);
+  // A total without a coding score is display-only and does not sort.
+  assert.equal(options[3].coding, undefined);
+  assert.equal(options[3].total, 52);
+  assert.equal(options[3].arenaCode, undefined);
+  assert.equal(options[4].coding, undefined);
   assert.equal(options[4].sameAs, undefined);
   // The shapes that carry no benchmarks keep their IDs only.
   assert.deepEqual(
-    parseModelOptions(['plain', { model: 'other' }]).map((option) => [option.id, option.score]),
+    parseModelOptions(['plain', { model: 'other' }]).map((option) => [option.id, option.coding]),
     [['plain', undefined], ['other', undefined]],
   );
 });
 
-test('the picker orders scored models first, strongest to weakest', () => {
+test('the picker sorts by the coding index only, strongest first', () => {
   const options = [
-    { id: 'b/unscored' },
-    { id: 'a/low', score: 40 },
-    { id: 'c/high', score: 71.5 },
-    { id: 'd/unscored' },
-    { id: 'e/tie', score: 40 },
+    { id: 'b/unscored', total: 90 },
+    { id: 'a/low', coding: 40 },
+    { id: 'c/high', coding: 71.5 },
+    { id: 'd/unscored', arenaCode: 1300 },
+    { id: 'e/tie', coding: 40 },
   ];
   assert.deepEqual(
     sortModelOptions(options).map((option) => option.id),
