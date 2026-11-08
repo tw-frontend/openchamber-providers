@@ -108,8 +108,9 @@ strongest first: each listed model shows its net improvement over the baseline b
 its leaderboard rank under it. Arena.ai challenges non-browser clients, so the extension ships a
 snapshot of the leaderboard (`service/arena-snapshot.json`); the local service re-reads it on every
 Fetch (kept for ten minutes) and falls back to the bundled copy, so scores keep working offline.
-`npm run arena:refresh` regenerates the snapshot from the page's React Server Components payload,
-and the scheduled *Arena snapshot* workflow runs it weekly. A model the leaderboard does not list
+`npm run arena:refresh` regenerates the snapshot from the page's React Server Components payload;
+run it from a network Cloudflare admits (the command explains when it cannot, and leaves the
+snapshot untouched). A model the leaderboard does not list
 is placed after the scored ones, alphabetically. A routing variant (`:nitro`, `:floor`, `:free`,
 `:batch`) is marked as the same model as its base and inherits the base's row.
 
