@@ -575,24 +575,61 @@ test('model IDs are read from the shapes gateways return', () => {
 
 test('catalog URLs address the model by author and slug', () => {
   assert.deepEqual(
-    endpointCandidates('https://openrouter.ai/api/v1', 'meta-llama/llama-3.3-70b-instruct'),
+    endpointCandidates('meta-llama/llama-3.3-70b-instruct'),
     ['https://openrouter.ai/api/v1/models/meta-llama/llama-3.3-70b-instruct/endpoints'],
   );
   // A `:free` style suffix rides on the request model, never in the URL.
   assert.deepEqual(
-    endpointCandidates('https://openrouter.ai/api/v1', 'meta-llama/llama-3.3-70b-instruct:free'),
+    endpointCandidates('meta-llama/llama-3.3-70b-instruct:free'),
     ['https://openrouter.ai/api/v1/models/meta-llama/llama-3.3-70b-instruct/endpoints'],
   );
-  // Trailing slashes on the base are trimmed; odd IDs are rejected.
-  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1/', 'deepseek/deepseek-chat'), [
+  // A custom catalog base has its trailing slashes trimmed; odd IDs are rejected.
+  assert.deepEqual(endpointCandidates('deepseek/deepseek-chat', 'https://openrouter.ai/api/v1/'), [
     'https://openrouter.ai/api/v1/models/deepseek/deepseek-chat/endpoints',
   ]);
-  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1', 'qwen/qwq 32b'), [
+  assert.deepEqual(endpointCandidates('qwen/qwq 32b'), [
     'https://openrouter.ai/api/v1/models/qwen/qwq%2032b/endpoints',
   ]);
-  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1', 'only-slug'), []);
-  assert.deepEqual(endpointCandidates('https://openrouter.ai/api/v1', 'author/'), []);
-  assert.deepEqual(endpointCandidates('ftp://openrouter.ai', 'author/slug'), []);
+  assert.deepEqual(endpointCandidates('only-slug'), []);
+  assert.deepEqual(endpointCandidates('author/'), []);
+  assert.deepEqual(endpointCandidates('author/slug', 'ftp://openrouter.ai'), []);
+});
+
+test('the catalog proxy round-trips through provider settings', () => {
+  const draft = emptyDraft();
+  draft.providerID = 'acme';
+  draft.name = 'Acme';
+  draft.baseURL = 'https://gateway.example/v1';
+  draft.apiKey = 'sk-test-1234';
+  draft.catalogProxy = 'http://localhost:10808';
+  draft.models[0]!.id = 'meta-llama/llama-3.3-70b-instruct';
+
+  const block = buildProvider(draft, {});
+  const settings = block.settings as Record<string, unknown>;
+  assert.equal(settings.catalogProxy, 'http://localhost:10808');
+
+  const back = draftFrom({ id: 'acme', block, file: 'opencode.json', overlay: false });
+  assert.equal(back.catalogProxy, 'http://localhost:10808');
+
+  draft.catalogProxy = '';
+  const cleared = buildProvider(draft, block);
+  assert.ok(!('catalogProxy' in (cleared.settings as Record<string, unknown>)));
+});
+
+test('catalog proxies must be http(s) URLs', () => {
+  const draft = emptyDraft();
+  draft.providerID = 'acme';
+  draft.name = 'Acme';
+  draft.baseURL = 'https://gateway.example/v1';
+  draft.apiKey = 'sk-test-1234';
+  draft.models[0]!.id = 'meta-llama/llama-3.3-70b-instruct';
+  draft.catalogProxy = 'localhost:10808';
+  assert.equal(
+    validateDraft(draft, { existingIDs: [], editingID: null }).catalogProxy,
+    'errorCatalogProxy',
+  );
+  draft.catalogProxy = 'http://localhost:10808';
+  assert.equal(validateDraft(draft, { existingIDs: [], editingID: null }).catalogProxy, undefined);
 });
 
 test('catalog headers send a bearer only when a key exists', () => {
@@ -698,14 +735,15 @@ test('the picker sorts by price and by measured speed', () => {
   assert.deepEqual(sortEndpoints(list, 'speed').map((item) => item.slug), ['b', 'a', 'c']);
 });
 
-test('the picker gates on OpenRouter base URLs', () => {
+test('the picker gates on routable http(s) base URLs', () => {
+  // The overlay is opt-in per model, so any http(s) endpoint qualifies —
+  // OpenRouter and self-hosted OpenRouter-compatible gateways alike.
   assert.equal(isRouterBaseURL('https://openrouter.ai/api/v1'), true);
-  assert.equal(isRouterBaseURL('https://openrouter.ai'), true);
-  assert.equal(isRouterBaseURL('http://openrouter.ai/api'), true);
-  assert.equal(isRouterBaseURL('https://www.openrouter.ai/api/v1'), true);
-  assert.equal(isRouterBaseURL('https://openrouter.ai.evil.example'), false);
-  assert.equal(isRouterBaseURL('https://myopenrouter.ai/api/v1'), false);
-  assert.equal(isRouterBaseURL('https://example.com/api/v1'), false);
+  assert.equal(isRouterBaseURL('https://gw.internal.simra.cloud/v1'), true);
+  assert.equal(isRouterBaseURL('http://localhost:8080/v1'), true);
+  assert.equal(isRouterBaseURL('ftp://openrouter.ai'), false);
+  assert.equal(isRouterBaseURL('openrouter.ai/api/v1'), false);
+  assert.equal(isRouterBaseURL('https://'), false);
   assert.equal(isRouterBaseURL(''), false);
 });
 

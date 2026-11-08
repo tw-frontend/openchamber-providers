@@ -11,7 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { modelCandidates, modelHeaders, parseModelIDs, endpointCandidates, endpointHeaders, parseEndpoints, dispatcherFor, type RouterEndpoint } from './models';
+import { modelCandidates, modelHeaders, parseModelIDs, endpointCandidates, endpointHeaders, parseEndpoints, dispatcherFor, httpFetch, type RouterEndpoint } from './models';
 
 const PORT = Number(process.env.OPENCHAMBER_SERVICE_PORT ?? 0);
 const TOKEN = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
@@ -24,6 +24,8 @@ type FetchRequest = {
   apiKey?: unknown;
   protocol?: unknown;
   modelID?: unknown;
+  /** Optional proxy for the catalog request, as `http(s)://host:port`. */
+  proxy?: unknown;
 };
 
 class ServiceError extends Error {
@@ -80,17 +82,17 @@ const resolveKey = (value: string): string => {
 };
 
 /** One GET to a catalog endpoint, with the error mapping both handlers share. */
-const requestPayload = async (url: string, headers: Record<string, string>): Promise<unknown> => {
+const requestPayload = async (url: string, headers: Record<string, string>, proxy = ''): Promise<unknown> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
+    const response = await httpFetch(url, {
       method: 'GET',
       headers,
       redirect: 'follow',
       signal: controller.signal,
-      dispatcher: dispatcherFor(url),
-    } as RequestInit);
+      dispatcher: dispatcherFor(url, proxy),
+    });
     const text = await response.text();
     if (text.length > RESPONSE_MAX) {
       throw new ServiceError(502, 'The endpoint response is too large.');
@@ -116,7 +118,11 @@ const requestPayload = async (url: string, headers: Record<string, string>): Pro
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ServiceError(504, 'The endpoint did not answer in time.');
     }
-    throw new ServiceError(502, error instanceof Error ? error.message : String(error));
+    // A proxy or TLS failure hides its reason one level down; keep it, since
+    // it is what a coworker needs to fix the proxy setting.
+    const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined;
+    const detail = cause instanceof Error ? `: ${cause.message}` : '';
+    throw new ServiceError(502, `${error instanceof Error ? error.message : String(error)}${detail}`);
   } finally {
     clearTimeout(timer);
   }
@@ -131,8 +137,9 @@ const requestModels = async (url: string, protocol: string, apiKey: string): Pro
   return models;
 };
 
-const requestEndpoints = async (url: string, apiKey: string): Promise<RouterEndpoint[]> => {
-  const payload = await requestPayload(url, endpointHeaders(apiKey));
+const requestEndpoints = async (url: string, proxy: string): Promise<RouterEndpoint[]> => {
+  // The catalog is public: never send a provider key to openrouter.ai.
+  const payload = await requestPayload(url, endpointHeaders(''), proxy);
   return parseEndpoints(payload);
 };
 
@@ -166,9 +173,9 @@ const handleModels = async (body: string): Promise<string[]> => {
 };
 
 /**
- * Provider endpoints for one router model. Reading the OpenRouter catalog is
- * public, so the API key is optional here: it is sent when the panel has one
- * and omitted otherwise.
+ * Provider endpoints for one router model. The catalog lives on openrouter.ai
+ * and is public, so no provider key is sent there; the optional proxy is the
+ * panel's per-provider setting and beats the environment proxy variables.
  */
 const handleProviders = async (body: string): Promise<RouterEndpoint[]> => {
   let request: FetchRequest;
@@ -177,20 +184,17 @@ const handleProviders = async (body: string): Promise<RouterEndpoint[]> => {
   } catch {
     throw new ServiceError(400, 'Expected a JSON body.');
   }
-  const baseURL = typeof request.baseURL === 'string' ? request.baseURL.trim() : '';
   const modelID = typeof request.modelID === 'string' ? request.modelID.trim() : '';
-  const apiKey = typeof request.apiKey === 'string' ? resolveKey(request.apiKey) : '';
-  if (!baseURL) throw new ServiceError(400, 'Base URL is required.');
+  const proxy = typeof request.proxy === 'string' ? request.proxy.trim() : '';
   if (!modelID) throw new ServiceError(400, 'Model ID is required.');
-  const urls = endpointCandidates(baseURL, modelID);
+  const urls = endpointCandidates(modelID);
   if (urls.length === 0) {
-    // The two failure shapes have different causes; say the right one.
-    const badBase = !/^https?:\/\/\S+$/i.test(baseURL.trim().replace(/\/+$/, ''));
-    throw new ServiceError(400, badBase
-      ? 'Base URL must be an http(s) URL, e.g. https://openrouter.ai/api/v1.'
-      : 'Model ID must look like author/slug, e.g. meta-llama/llama-3.3-70b-instruct.');
+    throw new ServiceError(400, 'Model ID must look like author/slug, e.g. meta-llama/llama-3.3-70b-instruct.');
   }
-  return requestEndpoints(urls[0]!, apiKey);
+  if (proxy && !/^https?:\/\/\S+$/i.test(proxy)) {
+    throw new ServiceError(400, 'Proxy must be an http(s) URL, e.g. http://localhost:10808.');
+  }
+  return requestEndpoints(urls[0]!, proxy);
 };
 
 const server = createServer(async (req, res) => {

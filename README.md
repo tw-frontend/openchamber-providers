@@ -4,7 +4,7 @@
 
 [![OpenChamber](https://img.shields.io/badge/OpenChamber-extension-66800b)](https://openchamber.dev)
 [![OpenCode](https://img.shields.io/badge/OpenCode-provider%20manager-555)](https://opencode.ai)
-[![License](https://img.shields.io/github/license/leoporoluo/openchamber-providers)](LICENSE)
+[![License](https://img.shields.io/github/license/tw-frontend/openchamber-providers)](LICENSE)
 
 An [OpenChamber](https://openchamber.dev) extension that manages custom OpenAI-compatible
 providers for OpenCode from a panel on the right-hand rail, or as a full-screen page.
@@ -21,9 +21,11 @@ unrelated settings are preserved byte for byte.
 - Provider ID, display name, API protocol, base URL and API key
 - Models with decimal context and output limits, upstream model ID, image input and tool calling
 - **Fetch** a provider's model list and pick the model ID from a dropdown, instead of typing it
-- **OpenRouter provider routing**: pick which providers serve an OpenRouter model, with
-  price per million tokens, throughput, latency and uptime per endpoint, and optional
-  per-request price caps (`body.provider` on the model entry)
+- **OpenRouter provider routing**: see every provider that serves a model — price per
+  million tokens, throughput, latency and uptime, read live from the openrouter.ai
+  catalog — and pick them in order, with optional per-request price caps
+  (`body.provider` on the model entry). The catalog request can leave through an
+  optional per-provider **Catalog proxy**
 - Reasoning levels as clickable cards, written as OpenCode's own `capabilities.reasoning`;
   an existing custom package also gets the matching `variants`, since OpenCode derives none for it
 - Reads both `opencode.json` and `opencode.jsonc`; edits write back to the file they came from
@@ -38,7 +40,7 @@ unrelated settings are preserved byte for byte.
 In OpenChamber: **Settings → Extensions → Folder, ZIP or URL**, paste:
 
 ```
-https://github.com/leoporoluo/openchamber-providers.git
+https://github.com/tw-frontend/openchamber-providers.git
 ```
 
 then choose **Add** and approve the filesystem permission (it may read and write
@@ -48,7 +50,7 @@ you want to use **Fetch**; the rest of the panel works without it.
 Install from a local clone instead:
 
 ```bash
-git clone https://github.com/leoporoluo/openchamber-providers.git
+git clone https://github.com/tw-frontend/openchamber-providers.git
 ```
 
 and paste the absolute path of the cloned folder into the same field.
@@ -122,16 +124,23 @@ literal key is the simplest choice for Fetch.
 ### OpenRouter provider routing
 
 On OpenRouter, one model is served by many providers with different prices, speeds and
-regions. When a provider's base URL points at `openrouter.ai`, each model card gains a
-**Providers** button. It asks the OpenRouter catalog
-(`GET /api/v1/models/{author}/{slug}/endpoints`) and lists every endpoint serving the
-model, with:
+regions. Each model card whose provider has an http(s) base URL and an `author/slug`
+model ID gains a **Providers** button. It reads the public OpenRouter catalog on
+`openrouter.ai` (`GET /api/v1/models/{author}/{slug}/endpoints`) and lists every endpoint
+serving the model, with:
 
 - **Price** — prompt and completion dollars per million tokens (`$0.10 in · $0.32 out`)
 - **Speed** — output tokens per second and time to first token, as measured over the
   last 30 minutes (dash when OpenRouter has no measurement yet)
 - **Uptime** and context window, plus the quantization (`fp8` …) and an `inactive` mark
 - Sorting by catalog order, total price, or measured speed
+
+The catalog request leaves through the provider's **Catalog proxy** setting when one is
+set (for example `http://localhost:10808`), falls back to `HTTPS_PROXY` / `HTTP_PROXY`
+from the environment when those are set, and connects directly otherwise. This works with
+any OpenRouter-compatible gateway: the routing overlay is written to the model entry,
+while the catalog always comes from openrouter.ai, so the gateway needs no catalog
+endpoint of its own.
 
 Tick one or more endpoints — in click order — and choose **Apply**. The selection is
 written to the model entry's request-body overlay, which OpenCode merges into every
@@ -177,8 +186,9 @@ panel only reads and updates the OpenCode config files listed in its permission 
 demand: the panel sends the base URL, API key and protocol to the service over the host's
 loopback proxy, and the service makes one `GET` request to the provider's model endpoint.
 The OpenRouter provider list works the same way with `POST /providers`: the service makes
-one `GET` request to the OpenRouter catalog, sending the stored key only when one exists
-(the catalog is public). The service binds `127.0.0.1`, requires the host's bearer token,
+one `GET` request to the public openrouter.ai catalog and never sends the provider key
+there, since the catalog needs none. The request honours the provider's **Catalog proxy**
+setting, then the environment proxy variables, then a direct connection. The service binds `127.0.0.1`, requires the host's bearer token,
 keeps no key and logs no request body. It is stopped with the app. Approve the service in
 **Settings → Extensions** to use Fetch; without that approval the rest of the panel still
 works.

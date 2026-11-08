@@ -64,10 +64,10 @@ export type ModelFetchRequest = {
 };
 
 export type ProviderFetchRequest = {
-  baseURL: string;
-  apiKey: string;
-  /** The upstream model to look up, `author/slug` for the router catalog. */
+  /** The upstream model to look up in the openrouter.ai catalog. */
   modelID: string;
+  /** Optional proxy for the catalog request, from the provider settings. */
+  proxy: string;
 };
 
 /** A failed model-list request, split so the panel can localise the service case. */
@@ -148,6 +148,8 @@ export class ProviderPanel {
   /** Per-model max price inputs, dollars per million tokens. */
   private routerMaxPrompt = new Map<string, string>();
   private routerMaxCompletion = new Map<string, string>();
+  /** Per-model manual slug input, kept while the picker is open. */
+  private routerEpoch = new Map<string, number>();
 
   private mounted: Disposable[] = [];
 
@@ -482,7 +484,7 @@ export class ProviderPanel {
     return model.modelID.trim() || model.id.trim();
   }
 
-  /** The picker exists for OpenRouter bases, where per-provider routing is real. */
+  /** The picker needs a routable http(s) base URL; model IDs feed the catalog fetch. */
   private canFetchProviders(model: ModelDraft): boolean {
     if (!this.draft || !isRouterBaseURL(this.draft.baseURL)) return false;
     const id = this.upstreamID(model);
@@ -495,35 +497,28 @@ export class ProviderPanel {
     if (!draft || this.busy || this.routerBusy || this.fetchingModelKey) return;
     const model = draft.models.find((item) => item.key === modelKey);
     if (!model || !isRouterBaseURL(draft.baseURL)) return;
+    if (!this.canFetchProviders(model)) return;
     const modelID = this.upstreamID(model);
-    if (!this.canFetchProviders(model)) {
-      await this.host.toast({ kind: 'error', message: this.tr('routerNeedsModel') });
-      return;
-    }
+    // Closing or applying the picker bumps the epoch, so a late catalog answer
+    // cannot reopen a section the user already dismissed.
+    const epoch = this.routerEpoch.get(modelKey) ?? 0;
 
     this.routerBusy = modelKey;
-    this.routerError.clear();
+    this.routerError.delete(modelKey);
     this.paint();
     try {
       const endpoints = await this.host.fetchProviders({
-        baseURL: draft.baseURL.trim(),
-        apiKey: draft.apiKey.trim(),
         modelID,
+        proxy: draft.catalogProxy.trim(),
       });
-      if (this.draft !== draft) return;
+      if (this.draft !== draft || (this.routerEpoch.get(modelKey) ?? 0) !== epoch) return;
       this.routerEndpoints.set(modelKey, endpoints);
-      // The selection starts from the routing the model already carries, in
-      // its saved order; slugs the catalog no longer reports drop away.
-      const known = new Set(endpoints.map((endpoint) => endpoint.slug));
-      this.routerSelection.set(modelKey, model.routing?.slugs.filter((slug) => known.has(slug)) ?? []);
-      this.routerFallback.set(modelKey, model.routing?.fallback ?? true);
-      this.routerMaxPrompt.set(modelKey, model.routing?.maxPrompt ?? '');
-      this.routerMaxCompletion.set(modelKey, model.routing?.maxCompletion ?? '');
     } catch (error) {
-      if (this.draft !== draft) return;
+      if (this.draft !== draft || (this.routerEpoch.get(modelKey) ?? 0) !== epoch) return;
       const message = error instanceof ModelFetchError && error.code === 'service'
         ? this.tr('fetchService')
         : errorText(error);
+      // The card shows the error, so it stays visible with the picker closed.
       this.routerError.set(modelKey, fill(this.tr('routerFailed'), { message }));
     } finally {
       this.routerBusy = null;
@@ -533,24 +528,39 @@ export class ProviderPanel {
 
   private toggleRouterPicker(modelKey: string): void {
     if (this.routerEndpoints.has(modelKey)) {
-      this.routerEndpoints.delete(modelKey);
-      this.routerSelection.delete(modelKey);
-      this.routerFallback.delete(modelKey);
-      this.routerMaxPrompt.delete(modelKey);
-      this.routerMaxCompletion.delete(modelKey);
-      this.routerError.delete(modelKey);
+      this.closeRouterPicker(modelKey);
       this.paint();
       return;
     }
-    void this.fetchProviders(modelKey);
+    const model = this.draft?.models.find((item) => item.key === modelKey);
+    if (!model) return;
+    // Open immediately with the current routing, then let the catalog fill in
+    // the provider rows.
+    this.routerEpoch.set(modelKey, (this.routerEpoch.get(modelKey) ?? 0) + 1);
+    this.routerEndpoints.set(modelKey, []);
+    this.routerSelection.set(modelKey, [...(model.routing?.slugs ?? [])]);
+    this.routerFallback.set(modelKey, model.routing?.fallback ?? true);
+    this.routerMaxPrompt.set(modelKey, model.routing?.maxPrompt ?? '');
+    this.routerMaxCompletion.set(modelKey, model.routing?.maxCompletion ?? '');
+    this.paint();
+    if (this.canFetchProviders(model)) void this.fetchProviders(modelKey);
+  }
+
+  /** Drops the picker state for a model and invalidates any in-flight fetch. */
+  private closeRouterPicker(modelKey: string): void {
+    this.routerEpoch.set(modelKey, (this.routerEpoch.get(modelKey) ?? 0) + 1);
+    this.routerEndpoints.delete(modelKey);
+    this.routerSelection.delete(modelKey);
+    this.routerFallback.delete(modelKey);
+    this.routerMaxPrompt.delete(modelKey);
+    this.routerMaxCompletion.delete(modelKey);
+    this.routerError.delete(modelKey);
   }
 
   private toggleRouterSelection(modelKey: string, slug: string): void {
     const current = this.routerSelection.get(modelKey) ?? [];
-    this.routerSelection.set(
-      modelKey,
-      current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug],
-    );
+    const next = current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug];
+    this.routerSelection.set(modelKey, next);
     this.paint();
   }
 
@@ -560,7 +570,9 @@ export class ProviderPanel {
     if (!draft) return;
     const model = draft.models.find((item) => item.key === modelKey);
     if (!model) return;
-    const slugs = this.routerSelection.get(modelKey) ?? [];
+    // The rows are the only source, and the order they were picked in is the
+    // order the model tries them in.
+    const slugs = [...(this.routerSelection.get(modelKey) ?? [])];
     const maxPrompt = this.routerMaxPrompt.get(modelKey)?.trim() ?? '';
     const maxCompletion = this.routerMaxCompletion.get(modelKey)?.trim() ?? '';
     // Always a routing object: an empty selection is an explicit clear, so
@@ -572,12 +584,7 @@ export class ProviderPanel {
       ...(maxCompletion !== '' && { maxCompletion }),
     };
     if (this.errors.models) this.errors.models = undefined;
-    this.routerEndpoints.delete(modelKey);
-    this.routerSelection.delete(modelKey);
-    this.routerFallback.delete(modelKey);
-    this.routerMaxPrompt.delete(modelKey);
-    this.routerMaxCompletion.delete(modelKey);
-    this.routerError.delete(modelKey);
+    this.closeRouterPicker(modelKey);
     this.paint();
   }
 
@@ -1139,6 +1146,27 @@ export class ProviderPanel {
     this.mounted.push(toggleKey);
     keyBlock.insertBefore(keyLabelRow, keyBlock.firstChild);
 
+    // The catalog proxy is per provider and panel-owned: each coworker sets
+    // their own value, and the service uses it for the openrouter.ai request.
+    const proxyBlock = el('div');
+    proxyBlock.title = this.tr('catalogProxyHint');
+    grid.append(proxyBlock);
+    const proxyField = mountTextField(proxyBlock, {
+      label: this.tr('catalogProxy'),
+      value: current.catalogProxy,
+      mono: true,
+      placeholder: 'http://localhost:10808',
+      error: this.errors.catalogProxy ? this.tr(this.errors.catalogProxy) : undefined,
+      onChange: (value) => {
+        current.catalogProxy = value;
+        if (this.errors.catalogProxy) {
+          this.errors.catalogProxy = undefined;
+          proxyField.update({ value: current.catalogProxy, error: undefined });
+        }
+      },
+    });
+    this.mounted.push(proxyField);
+
     /* ---------------------------------------------------------------- models */
     const models = el('section', 'section');
     models.append(this.sectionHead(this.tr('models'), String(current.models.length)));
@@ -1217,7 +1245,7 @@ export class ProviderPanel {
         title: picked > 0
           ? `${this.tr('routerProvidersTitle')} · ${fill(this.tr('routerBadge'), { count: String(picked) })}`
           : this.tr('routerProvidersTitle'),
-        disabled: this.busy || this.fetchingModelKey !== null || this.routerBusy !== null || !this.canFetchProviders(model),
+        disabled: this.busy || this.fetchingModelKey !== null || this.routerBusy !== null,
       });
       router.dataset.focus = `router:${model.key}`;
       router.textContent = this.routerBusy === model.key
@@ -1422,12 +1450,6 @@ export class ProviderPanel {
 
     const endpoints = sortEndpoints(this.routerEndpoints.get(model.key) ?? [], this.routerSort);
     const selection = this.routerSelection.get(model.key) ?? [];
-    if (endpoints.length === 0) {
-      const empty = el('div', 'router-empty');
-      empty.textContent = this.tr('routerEmpty');
-      panel.append(empty);
-      return panel;
-    }
 
     const rows = el('div', 'router-rows');
     rows.setAttribute('role', 'group');
@@ -1467,7 +1489,13 @@ export class ProviderPanel {
       row.addEventListener('click', () => this.toggleRouterSelection(model.key, endpoint.slug));
       rows.append(row);
     }
-    panel.append(rows);
+    if (endpoints.length > 0) {
+      panel.append(rows);
+    } else {
+      const empty = el('div', 'router-empty');
+      empty.textContent = this.tr('routerEmpty');
+      panel.append(empty);
+    }
 
     const foot = el('div', 'router-foot');
     const maxBlock = el('div', 'router-max');

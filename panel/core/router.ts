@@ -1,19 +1,25 @@
 /**
- * OpenRouter helpers behind the per-model provider picker.
+ * Provider routing helpers behind the per-model provider picker.
  *
- * Pure data code: gate the feature on the base URL, format the catalog
- * numbers the panel shows, and order endpoints for display. The routing
- * slugs themselves are OpenRouter endpoint slugs (`deepinfra/turbo`,
- * `google-vertex/us-east5`) used inside the request-body `provider` object.
+ * Pure data code: gate the feature on the base URL, parse manual slug
+ * input, format the catalog numbers the panel shows, and order endpoints
+ * for display. The routing slugs are OpenRouter endpoint slugs
+ * (`deepinfra/turbo`, `google-vertex/us-east5`) used inside the
+ * request-body `provider` object.
  */
 import type { RouterEndpoint } from '../../service/models';
 
-/** True when the base URL points at OpenRouter, where per-provider routing exists. */
+/**
+ * True when the base URL can carry OpenRouter-style provider routing. The
+ * overlay is opt-in per model, so any http(s) endpoint qualifies — a
+ * self-hosted OpenRouter-compatible gateway included; the request still
+ * goes to whatever base URL the provider names.
+ */
 export const isRouterBaseURL = (baseURL: string): boolean => {
   try {
     const url = new URL(baseURL.trim());
     return (url.protocol === 'https:' || url.protocol === 'http:')
-      && /(^|\.)openrouter\.ai$/.test(url.hostname);
+      && url.hostname !== '';
   } catch {
     return false;
   }

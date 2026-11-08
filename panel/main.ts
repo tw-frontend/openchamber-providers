@@ -54,13 +54,13 @@ const panel = new ProviderPanel(root, {
       ? body.models.filter((item): item is string => typeof item === 'string')
       : [];
   },
-  fetchProviders: async ({ baseURL, apiKey, modelID }) => {
+  fetchProviders: async ({ modelID, proxy }) => {
     let result: { status: number; body: string };
     try {
       result = await host.serviceRequest({
         method: 'POST',
         path: '/providers',
-        body: JSON.stringify({ baseURL, apiKey, modelID }),
+        body: JSON.stringify({ modelID, proxy }),
       });
     } catch (error) {
       if (error instanceof HostRequestError && error.code === 'NO_SERVICE') {

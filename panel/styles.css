@@ -688,6 +688,10 @@ html[data-oc-surface='page'] .panes {
   color: var(--oc-muted);
 }
 
+.router-manual {
+  padding: 0 4px 8px;
+}
+
 .router-rows {
   display: flex;
   flex-direction: column;

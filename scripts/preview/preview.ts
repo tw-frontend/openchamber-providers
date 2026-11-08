@@ -112,9 +112,9 @@ const host: PanelHost = {
     ];
   },
   // Fake OpenRouter catalog so the provider picker is browsable in preview.
-  fetchProviders: async ({ baseURL }) => {
+  fetchProviders: async ({ modelID }) => {
     await new Promise((resolve) => setTimeout(resolve, 300));
-    if (!baseURL.includes('openrouter')) throw new Error('HTTP 404 Not Found');
+    if (!modelID.includes('/')) throw new Error('HTTP 404 Not Found');
     const endpoint = (
       slug: string,
       providerName: string,

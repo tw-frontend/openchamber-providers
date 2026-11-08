@@ -3,7 +3,7 @@
  * outbound dispatcher: the cluster firewalls direct egress, so a fetch may
  * need the standard proxy environment variables.
  */
-import { Agent, ProxyAgent, type Dispatcher } from 'undici';
+import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 
 const PROXY_URL = process.env.HTTPS_PROXY ?? process.env.https_proxy
   ?? process.env.HTTP_PROXY ?? process.env.http_proxy ?? '';
@@ -15,15 +15,39 @@ const NO_PROXY = (process.env.NO_PROXY ?? process.env.no_proxy ?? '')
 const proxyDispatcher = PROXY_URL ? new ProxyAgent(PROXY_URL) : undefined;
 const directDispatcher = new Agent();
 
-/** Dispatcher for an outbound URL: the configured proxy, or a direct agent
- * when the host appears in NO_PROXY. Undefined when no proxy is configured,
- * which leaves the fetch on the runtime default. */
-export const dispatcherFor = (url: string): Dispatcher | undefined => {
+/** Proxy agents by URL: the panel may name its own catalog proxy per provider. */
+const proxyAgents = new Map<string, ProxyAgent>();
+
+const proxyAgentFor = (proxyURL: string): ProxyAgent => {
+  const key = proxyURL.trim();
+  let agent = proxyAgents.get(key);
+  if (!agent) {
+    agent = new ProxyAgent(key);
+    proxyAgents.set(key, agent);
+  }
+  return agent;
+};
+
+/** Dispatcher for an outbound URL: an explicit proxy wins, then the configured
+ * environment proxy, and a direct agent when the host appears in NO_PROXY.
+ * Undefined leaves the fetch on the runtime default. */
+export const dispatcherFor = (url: string, proxyURL = ''): Dispatcher | undefined => {
+  if (proxyURL.trim()) return proxyAgentFor(proxyURL);
   if (!proxyDispatcher) return undefined;
   const hostname = new URL(url).hostname.toLowerCase();
   const bypass = NO_PROXY.some((entry) => hostname === entry || hostname.endsWith(`.${entry}`));
   return bypass ? directDispatcher : proxyDispatcher;
 };
+
+/**
+ * Node's global fetch rejects a dispatcher built from another undici copy
+ * (`UND_ERR_INVALID_ARG: invalid onRequestStart method`), so proxied requests
+ * go through undici's own fetch, the copy that built the dispatcher.
+ */
+export const httpFetch = (
+  url: string,
+  init: Parameters<typeof undiciFetch>[1],
+): ReturnType<typeof undiciFetch> => undiciFetch(url, init);
 
 /** URL candidates for a provider's model list, in the order to try them. */
 export const modelCandidates = (baseURL: string): string[] => {
@@ -109,13 +133,20 @@ export type RouterEndpoint = {
 };
 
 /**
+ * The public OpenRouter catalog. Provider routing is an OpenRouter feature, so
+ * the endpoint catalog always comes from openrouter.ai, whatever gateway
+ * actually serves the model.
+ */
+export const OPENROUTER_CATALOG = 'https://openrouter.ai/api/v1';
+
+/**
  * Catalog URL for a model's provider endpoints. OpenRouter addresses the
  * catalog as `models/{author}/{slug}/endpoints`, so the model ID must be
  * `author/slug`; a `:free` style variant suffix rides on the request model
  * and never in the URL, so it is stripped here.
  */
-export const endpointCandidates = (baseURL: string, modelID: string): string[] => {
-  const base = baseURL.trim().replace(/\/+$/, '');
+export const endpointCandidates = (modelID: string, catalogBase = OPENROUTER_CATALOG): string[] => {
+  const base = catalogBase.trim().replace(/\/+$/, '');
   if (!/^https?:\/\/\S+$/i.test(base)) return [];
   const id = modelID.trim();
   const slash = id.indexOf('/');

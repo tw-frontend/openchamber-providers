@@ -64,6 +64,8 @@ export type ProviderDraft = {
   customPackage: string;
   baseURL: string;
   apiKey: string;
+  /** Optional HTTP proxy for the openrouter.ai catalog request. */
+  catalogProxy: string;
   models: ModelDraft[];
 };
 
@@ -126,6 +128,7 @@ export const emptyDraft = (): ProviderDraft => ({
   customPackage: '',
   baseURL: '',
   apiKey: '',
+  catalogProxy: '',
   models: [emptyModel()],
 });
 
@@ -299,6 +302,7 @@ export const draftFrom = (entry: ProviderEntry): ProviderDraft => {
     customPackage: protocol === 'custom' ? pkg : '',
     baseURL: stringOf(settings.baseURL),
     apiKey: stringOf(settings.apiKey),
+    catalogProxy: stringOf(settings.catalogProxy),
     models: readModels(provider),
   };
 };
@@ -536,6 +540,12 @@ export const buildProvider = (draft: ProviderDraft, existing?: JsonObject): Json
   const apiKey = draft.apiKey.trim();
   if (apiKey) settings.apiKey = apiKey;
   else delete settings.apiKey;
+
+  // The catalog proxy is a panel-owned setting; dropping the field when it is
+  // cleared keeps the provider block clean.
+  const catalogProxy = draft.catalogProxy.trim();
+  if (catalogProxy) settings.catalogProxy = catalogProxy;
+  else delete settings.catalogProxy;
 
   // `npm`, `options` and `api` are the V1 spellings of `package`, `settings`
   // and the header/body overlays. Writing one spelling keeps the file clean.

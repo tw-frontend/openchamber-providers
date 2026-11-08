@@ -10,6 +10,7 @@ export type DraftErrors = {
   name?: 'errorName';
   baseURL?: 'errorBaseURL';
   apiKey?: 'errorAPIKey';
+  catalogProxy?: 'errorCatalogProxy';
   models?: 'errorModels' | 'errorModelsDuplicate' | 'errorModelsIncomplete' | 'errorLimits' | 'errorMaxPrice';
 };
 
@@ -37,6 +38,9 @@ export const validateDraft = (draft: ProviderDraft, options: ValidateOptions): D
 
   const key = draft.apiKey.trim();
   if (key && !isKeyReference(key) && !isPrintableKey(key)) errors.apiKey = 'errorAPIKey';
+
+  const proxy = draft.catalogProxy.trim();
+  if (proxy && !isWebURL(proxy)) errors.catalogProxy = 'errorCatalogProxy';
 
   const ids = draft.models.map((model) => model.id.trim()).filter(Boolean);
   if (ids.length === 0) {
