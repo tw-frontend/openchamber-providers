@@ -1313,7 +1313,6 @@ export class ProviderPanel {
         if (option.arena !== undefined) {
           parts.push(fill(this.tr('modelArenaRank'), { rank: String(option.arena.rank) }));
         }
-        if (option.sameAs) parts.push(fill(this.tr('modelSameAs'), { model: option.sameAs }));
         if (parts.length > 0) entry.hint = parts.join(' · ');
         return entry;
       });
