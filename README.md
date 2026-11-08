@@ -134,6 +134,11 @@ any OpenRouter-compatible gateway: the routing overlay is written to the model e
 while the catalog always comes from openrouter.ai, so the gateway needs no catalog
 endpoint of its own.
 
+Speed and latency are the p50 figures OpenRouter publishes for each endpoint over the last
+30 minutes. The JSON catalog currently leaves those fields empty, so the service also
+reads the model's page on openrouter.ai, whose payload carries the measurements, and keeps
+a dash where OpenRouter has none yet.
+
 Tick one or more endpoints — in click order — and choose **Apply**. The selection is
 written to the model entry's request-body overlay, which OpenCode merges into every
 request for that model:

@@ -17,6 +17,7 @@ import { packageFrom, protocolOfPackage } from '../panel/core/protocols';
 import { validateDraft } from '../panel/core/validate';
 import { modelCandidates, modelHeaders, parseModelIDs } from '../service/models';
 import { endpointCandidates, endpointHeaders, parseEndpoints } from '../service/models';
+import { modelPageCandidates, parseEndpointStats, mergeEndpointStats } from '../service/models';
 import {
   contextText,
   isRouterBaseURL,
@@ -683,6 +684,60 @@ test('endpoints are normalised and deduplicated from the catalog response', () =
   });
   assert.equal(endpoints[1]!.slug, 'no-tag');
   assert.deepEqual(parseEndpoints({}), []);
+});
+
+test('the model page URL shares the catalog model addressing', () => {
+  assert.deepEqual(
+    modelPageCandidates('meta-llama/llama-3.3-70b-instruct:free'),
+    ['https://openrouter.ai/meta-llama/llama-3.3-70b-instruct'],
+  );
+  assert.deepEqual(modelPageCandidates('only-slug'), []);
+});
+
+test('page statistics fill the speed and latency the catalog leaves null', () => {
+  // The model page serialises its payload as escaped JSON inside script tags.
+  const html = [
+    '<script>self.__next_f.push([1,"{\\"data\\":[{\\"id\\":\\"a\\",',
+    '\\"provider_slug\\":\\"makora/fp8\\",\\"status\\":0,',
+    '\\"stats\\":{\\"endpoint_id\\":\\"e1\\",\\"p50_latency\\":943,\\"p50_throughput\\":69,',
+    '\\"request_count\\":19768,\\"window_minutes\\":30},\\"is_zdr\\":true},',
+    '{\\"id\\":\\"b\\",\\"provider_slug\\":\\"streamlake\\",\\"status\\":0,',
+    '\\"stats\\":{\\"endpoint_id\\":\\"e2\\",\\"p50_latency\\":864,\\"p50_throughput\\":34}},',
+    '{\\"id\\":\\"c\\",\\"provider_slug\\":\\"deepinfra/fp4/flex\\",\\"status\\":0}]}"])</script>',
+  ].join('');
+  const stats = parseEndpointStats(html);
+  // Latency converts from the page's milliseconds to the catalog's seconds.
+  assert.deepEqual(stats['makora/fp8'], { throughput: 69, latency: 0.943 });
+  assert.deepEqual(stats['streamlake'], { throughput: 34, latency: 0.864 });
+  // No stats object: no entry, so the panel keeps its placeholder.
+  assert.equal(stats['deepinfra/fp4/flex'], undefined);
+  assert.deepEqual(parseEndpointStats(''), {});
+  assert.deepEqual(parseEndpointStats('<html>no payload here</html>'), {});
+});
+
+test('page statistics never overwrite a value the catalog reports', () => {
+  const endpoint = (slug: string, throughput: number | null, latency: number | null) => ({
+    slug,
+    providerName: slug,
+    contextLength: null,
+    maxCompletionTokens: null,
+    quantization: '',
+    pricing: { prompt: null, completion: null, cacheRead: null, discount: null },
+    supportedParameters: [],
+    status: 0,
+    uptimeLast30m: null,
+    uptimeLast1d: null,
+    latencyLast30m: latency,
+    throughputLast30m: throughput,
+  });
+  const merged = mergeEndpointStats(
+    [endpoint('a', null, null), endpoint('b', 12, 0.2), endpoint('c', null, null)],
+    { a: { throughput: 69, latency: 0.943 }, b: { throughput: 50, latency: 1.5 } },
+  );
+  assert.deepEqual(
+    merged.map((item) => [item.throughputLast30m, item.latencyLast30m]),
+    [[69, 0.943], [12, 0.2], [null, null]],
+  );
 });
 
 /* --------------------------------------------------------- router formatting */

@@ -140,21 +140,42 @@ export type RouterEndpoint = {
 export const OPENROUTER_CATALOG = 'https://openrouter.ai/api/v1';
 
 /**
- * Catalog URL for a model's provider endpoints. OpenRouter addresses the
- * catalog as `models/{author}/{slug}/endpoints`, so the model ID must be
- * `author/slug`; a `:free` style variant suffix rides on the request model
- * and never in the URL, so it is stripped here.
+ * The `author` and `slug` of a catalog model ID. OpenRouter addresses models
+ * as `author/slug`, and a `:free` style variant suffix rides on the request
+ * model and never in the URL, so it is stripped here.
  */
+const modelSegments = (modelID: string): { author: string; slug: string } | null => {
+  const id = modelID.trim();
+  const slash = id.indexOf('/');
+  if (slash <= 0 || slash === id.length - 1) return null;
+  const author = id.slice(0, slash).trim();
+  const slug = id.slice(slash + 1).split(':')[0]!.trim();
+  return author && slug ? { author, slug } : null;
+};
+
+/** Catalog URL for a model's provider endpoints. */
 export const endpointCandidates = (modelID: string, catalogBase = OPENROUTER_CATALOG): string[] => {
   const base = catalogBase.trim().replace(/\/+$/, '');
   if (!/^https?:\/\/\S+$/i.test(base)) return [];
-  const id = modelID.trim();
-  const slash = id.indexOf('/');
-  if (slash <= 0 || slash === id.length - 1) return [];
-  const author = id.slice(0, slash).trim();
-  const slug = id.slice(slash + 1).split(':')[0]!.trim();
-  if (!author || !slug) return [];
+  const segments = modelSegments(modelID);
+  if (!segments) return [];
+  const { author, slug } = segments;
   return [`${base}/models/${encodeURIComponent(author)}/${encodeURIComponent(slug)}/endpoints`];
+};
+
+/**
+ * The public model page, whose server-rendered payload carries the per-endpoint
+ * speed and latency percentiles. The catalog API leaves `throughput_last_30m`
+ * and `latency_last_30m` null, so this page is where those numbers come from.
+ */
+export const modelPageCandidates = (modelID: string, catalogBase = OPENROUTER_CATALOG): string[] => {
+  const base = catalogBase.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\/\S+$/i.test(base)) return [];
+  const segments = modelSegments(modelID);
+  if (!segments) return [];
+  const origin = new URL(base).origin;
+  const { author, slug } = segments;
+  return [`${origin}/${encodeURIComponent(author)}/${encodeURIComponent(slug)}`];
 };
 
 /**
@@ -235,3 +256,78 @@ export const parseEndpoints = (payload: unknown): RouterEndpoint[] => {
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   !!value && typeof value === 'object' && !Array.isArray(value)
 );
+
+/* ---------------------------------------------------------- endpoint statistics */
+
+/**
+ * Measured behaviour of one endpoint over the last 30 minutes. Percentiles,
+ * not means: p50 is what a typical request sees. Units match the catalog
+ * fields they fill: tokens per second, and seconds to first token.
+ */
+export type EndpointStat = {
+  /** p50 output speed, tokens per second. */
+  throughput: number | null;
+  /** p50 latency (time to first token), seconds. */
+  latency: number | null;
+};
+
+const statNumber = (body: string, key: string): number | null => {
+  const match = new RegExp(`"${key}":(-?[\\d.]+(?:[eE][-+]?\\d+)?)`).exec(body);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+};
+
+/**
+ * Per-endpoint speed and latency from a server-rendered OpenRouter model page.
+ * The catalog API reports both as null, while the page ships its payload as
+ * escaped JSON whose endpoint objects name the routing slug in `provider_slug`
+ * and follow it with a flat `stats` object. An endpoint without measurements
+ * yields no entry, and the panel keeps its dash placeholder.
+ */
+export const parseEndpointStats = (html: string): Record<string, EndpointStat> => {
+  const out: Record<string, EndpointStat> = {};
+  if (!html) return out;
+  const text = html.replace(/\\"/g, '"');
+  const slugs: Array<{ slug: string; index: number }> = [];
+  for (const match of text.matchAll(/"provider_slug":"([^"]+)"/g)) {
+    slugs.push({ slug: match[1]!.trim(), index: match.index ?? 0 });
+  }
+  if (slugs.length === 0) return out;
+  for (const match of text.matchAll(/"stats":\{([^}]*)\}/g)) {
+    const at = match.index ?? 0;
+    // A stats object belongs to the last slug the page printed before it.
+    let owner = '';
+    for (const candidate of slugs) {
+      if (candidate.index > at) break;
+      owner = candidate.slug;
+    }
+    if (!owner) continue;
+    const body = match[1]!;
+    const throughput = statNumber(body, 'p50_throughput');
+    // The page measures latency in milliseconds; the catalog field it fills
+    // counts seconds.
+    const milliseconds = statNumber(body, 'p50_latency');
+    const latency = milliseconds === null ? null : milliseconds / 1000;
+    if (throughput === null && latency === null) continue;
+    out[owner] = { throughput, latency };
+  }
+  return out;
+};
+
+/**
+ * Fill the catalog's empty speed cells from the page measurements; a value the
+ * catalog already reports stays authoritative.
+ */
+export const mergeEndpointStats = (
+  endpoints: RouterEndpoint[],
+  stats: Record<string, EndpointStat>,
+): RouterEndpoint[] => endpoints.map((endpoint) => {
+  const stat = stats[endpoint.slug];
+  if (!stat) return endpoint;
+  return {
+    ...endpoint,
+    throughputLast30m: endpoint.throughputLast30m ?? stat.throughput,
+    latencyLast30m: endpoint.latencyLast30m ?? stat.latency,
+  };
+});

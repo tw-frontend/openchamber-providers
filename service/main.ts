@@ -11,7 +11,21 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { modelCandidates, modelHeaders, parseModelIDs, endpointCandidates, endpointHeaders, parseEndpoints, dispatcherFor, httpFetch, type RouterEndpoint } from './models';
+import {
+  modelCandidates,
+  modelHeaders,
+  parseModelIDs,
+  endpointCandidates,
+  modelPageCandidates,
+  endpointHeaders,
+  parseEndpoints,
+  parseEndpointStats,
+  mergeEndpointStats,
+  dispatcherFor,
+  httpFetch,
+  type EndpointStat,
+  type RouterEndpoint,
+} from './models';
 
 const PORT = Number(process.env.OPENCHAMBER_SERVICE_PORT ?? 0);
 const TOKEN = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
@@ -82,7 +96,7 @@ const resolveKey = (value: string): string => {
 };
 
 /** One GET to a catalog endpoint, with the error mapping both handlers share. */
-const requestPayload = async (url: string, headers: Record<string, string>, proxy = ''): Promise<unknown> => {
+const requestText = async (url: string, headers: Record<string, string>, proxy = ''): Promise<string> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -108,11 +122,7 @@ const requestPayload = async (url: string, headers: Record<string, string>, prox
         `HTTP ${response.status}${statusText}${detail ? `: ${detail}` : ''}`,
       );
     }
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new ServiceError(502, 'The endpoint did not return JSON.');
-    }
+    return text;
   } catch (error) {
     if (error instanceof ServiceError) throw error;
     if (error instanceof Error && error.name === 'AbortError') {
@@ -125,6 +135,15 @@ const requestPayload = async (url: string, headers: Record<string, string>, prox
     throw new ServiceError(502, `${error instanceof Error ? error.message : String(error)}${detail}`);
   } finally {
     clearTimeout(timer);
+  }
+};
+
+const requestPayload = async (url: string, headers: Record<string, string>, proxy = ''): Promise<unknown> => {
+  const text = await requestText(url, headers, proxy);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new ServiceError(502, 'The endpoint did not return JSON.');
   }
 };
 
@@ -141,6 +160,12 @@ const requestEndpoints = async (url: string, proxy: string): Promise<RouterEndpo
   // The catalog is public: never send a provider key to openrouter.ai.
   const payload = await requestPayload(url, endpointHeaders(''), proxy);
   return parseEndpoints(payload);
+};
+
+/** Speed and latency from the model page; a page without them yields none. */
+const requestEndpointStats = async (url: string, proxy: string): Promise<Record<string, EndpointStat>> => {
+  const html = await requestText(url, { accept: 'text/html' }, proxy);
+  return parseEndpointStats(html);
 };
 
 const handleModels = async (body: string): Promise<string[]> => {
@@ -194,7 +219,16 @@ const handleProviders = async (body: string): Promise<RouterEndpoint[]> => {
   if (proxy && !/^https?:\/\/\S+$/i.test(proxy)) {
     throw new ServiceError(400, 'Proxy must be an http(s) URL, e.g. http://localhost:10808.');
   }
-  return requestEndpoints(urls[0]!, proxy);
+  // The page carries the speed and latency the catalog API leaves null; the
+  // page failing must not cost the price list, so it is best effort.
+  const pageURLs = modelPageCandidates(modelID);
+  const [endpoints, stats] = await Promise.all([
+    requestEndpoints(urls[0]!, proxy),
+    pageURLs.length > 0
+      ? requestEndpointStats(pageURLs[0]!, proxy).catch(() => ({} as Record<string, EndpointStat>))
+      : Promise.resolve({} as Record<string, EndpointStat>),
+  ]);
+  return mergeEndpointStats(endpoints, stats);
 };
 
 const server = createServer(async (req, res) => {
