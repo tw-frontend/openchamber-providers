@@ -77,7 +77,7 @@ export const validateDraft = (draft: ProviderDraft, options: ValidateOptions): D
       const parsed = Number(text);
       return !Number.isFinite(parsed);
     };
-    return cap(routing.maxPrompt) || cap(routing.maxCompletion);
+    return cap(routing.maxPrompt) || cap(routing.maxCache) || cap(routing.maxCompletion);
   });
   if (badRouting) errors.models = 'errorMaxPrice';
 

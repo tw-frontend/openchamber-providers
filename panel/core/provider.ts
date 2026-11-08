@@ -52,7 +52,7 @@ export type ModelDraft = {
    * Absent when the model routes through every provider of the upstream
    * model. Max prices are dollars per million tokens as typed text.
    */
-  routing?: { slugs: string[]; fallback: boolean; maxPrompt?: string; maxCompletion?: string };
+  routing?: { slugs: string[]; fallback: boolean; maxPrompt?: string; maxCache?: string; maxCompletion?: string };
 };
 
 export type ProviderDraft = {
@@ -220,7 +220,7 @@ const decimalString = (value: number): string => {
     .replace(/\.$/, '');
 };
 
-const routingOf = (entry: JsonObject): { slugs: string[]; fallback: boolean; maxPrompt?: string; maxCompletion?: string } | undefined => {
+const routingOf = (entry: JsonObject): { slugs: string[]; fallback: boolean; maxPrompt?: string; maxCache?: string; maxCompletion?: string } | undefined => {
   const body = isObject(entry.body) ? entry.body : undefined;
   const provider = body && isObject(body.provider) ? body.provider : undefined;
   if (!provider) return undefined;
@@ -229,15 +229,19 @@ const routingOf = (entry: JsonObject): { slugs: string[]; fallback: boolean; max
   const maxPrompt = maxPrice && typeof maxPrice.prompt === 'number' && Number.isFinite(maxPrice.prompt)
     ? decimalString(maxPrice.prompt)
     : undefined;
+  const maxCache = maxPrice && typeof maxPrice.input_cache_read === 'number' && Number.isFinite(maxPrice.input_cache_read)
+    ? decimalString(maxPrice.input_cache_read)
+    : undefined;
   const maxCompletion = maxPrice && typeof maxPrice.completion === 'number' && Number.isFinite(maxPrice.completion)
     ? decimalString(maxPrice.completion)
     : undefined;
-  if (slugs.length === 0 && maxPrompt === undefined && maxCompletion === undefined) return undefined;
+  if (slugs.length === 0 && maxPrompt === undefined && maxCache === undefined && maxCompletion === undefined) return undefined;
   return {
     slugs,
     // OpenRouter routes to any provider unless told otherwise.
     fallback: provider.allow_fallbacks !== false,
     ...(maxPrompt !== undefined && { maxPrompt }),
+    ...(maxCache !== undefined && { maxCache }),
     ...(maxCompletion !== undefined && { maxCompletion }),
   };
 };
@@ -477,6 +481,7 @@ const modelFor = (model: ModelDraft, previous: JsonObject, pkg: string): JsonObj
   const routing = model.routing;
   const slugs = routing?.slugs.filter((slug) => slug.trim() !== '') ?? [];
   const maxPrompt = routing?.maxPrompt?.trim() ?? '';
+  const maxCache = routing?.maxCache?.trim() ?? '';
   const maxCompletion = routing?.maxCompletion?.trim() ?? '';
   const previousProvider = body && isObject(body.provider) ? body.provider : {};
   // Fields the picker owns; everything else is hand-written and stays.
@@ -497,12 +502,13 @@ const modelFor = (model: ModelDraft, previous: JsonObject, pkg: string): JsonObj
       providerOverlay.allow_fallbacks = routing.fallback;
     }
     const previousMaxPrice = isObject(previousProvider.max_price) ? previousProvider.max_price : {};
-    // Inside max_price the picker owns only the prompt/completion caps.
+    // Inside max_price the picker owns only the prompt/cache/completion caps.
     const maxPrice: JsonObject = {};
     for (const [key, value] of Object.entries(previousMaxPrice)) {
-      if (key !== 'prompt' && key !== 'completion') maxPrice[key] = value;
+      if (key !== 'prompt' && key !== 'input_cache_read' && key !== 'completion') maxPrice[key] = value;
     }
     if (maxPrompt !== '') maxPrice.prompt = Number(maxPrompt);
+    if (maxCache !== '') maxPrice.input_cache_read = Number(maxCache);
     if (maxCompletion !== '') maxPrice.completion = Number(maxCompletion);
     if (Object.keys(maxPrice).length > 0) providerOverlay.max_price = maxPrice;
     const nextBody: JsonObject = { ...(body ?? {}) };

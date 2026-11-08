@@ -25,6 +25,7 @@ import {
   isRouterBaseURL,
   latencyText,
   perMillion,
+  priceLine,
   priceText,
   sortEndpoints,
   throughputText,
@@ -864,6 +865,21 @@ test('prices become dollars per million tokens', () => {
   assert.equal(priceText(null), '—');
 });
 
+test('an endpoint price line reads prompt/cache/completion', () => {
+  assert.equal(
+    priceLine({ prompt: 0.00000015, cacheRead: 0.00000003, completion: 0.0000005, discount: null }),
+    '$0.15/$0.03/$0.50',
+  );
+  assert.equal(
+    priceLine({ prompt: 0.00000015, cacheRead: null, completion: 0.0000005, discount: null }),
+    '$0.15/—/$0.50',
+  );
+  assert.equal(
+    priceLine({ prompt: null, cacheRead: null, completion: null, discount: null }),
+    '—/—/—',
+  );
+});
+
 test('speed and reachability read like the catalog measures them', () => {
   assert.equal(throughputText(47.2), '47 tok/s');
   assert.equal(throughputText(9.55), '9.6 tok/s');
@@ -1085,6 +1101,28 @@ test('numeric max prices round-trip without blocking saves', () => {
     maxCompletion: '2.5',
   };
   assert.equal(validateDraft(check, { existingIDs: [], editingID: null }).models, undefined);
+});
+
+test('the cache-read cap round-trips through max_price.input_cache_read', () => {
+  const existing = {
+    settings: { baseURL: 'https://openrouter.ai/api/v1' },
+    models: {
+      coder: { body: { provider: { max_price: { prompt: 0.5, input_cache_read: 0.05, completion: 1.5 } } } },
+    },
+  };
+  const current = draftFrom({ id: 'gw', block: existing, file: 'f', overlay: false });
+  assert.deepEqual(current.models[0]!.routing, {
+    slugs: [],
+    fallback: true,
+    maxPrompt: '0.5',
+    maxCache: '0.05',
+    maxCompletion: '1.5',
+  });
+  const block = buildProvider(current, existing);
+  const written = (block.models as Record<string, Record<string, unknown>>).coder!;
+  assert.deepEqual(written.body, {
+    provider: { max_price: { prompt: 0.5, input_cache_read: 0.05, completion: 1.5 } },
+  });
 });
 
 test('the -1 unset-pricing sentinel reads as no price', () => {

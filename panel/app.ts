@@ -41,7 +41,7 @@ import {
   contextText,
   isRouterBaseURL,
   latencyText,
-  priceText,
+  priceLine,
   throughputText,
   uptimeText,
   sortEndpoints,
@@ -150,6 +150,7 @@ export class ProviderPanel {
   private routerSort: RouterSort = 'default';
   /** Per-model max price inputs, dollars per million tokens. */
   private routerMaxPrompt = new Map<string, string>();
+  private routerMaxCache = new Map<string, string>();
   private routerMaxCompletion = new Map<string, string>();
   /** Per-model manual slug input, kept while the picker is open. */
   private routerEpoch = new Map<string, number>();
@@ -218,6 +219,7 @@ export class ProviderPanel {
       this.routerError.clear();
       this.routerSort = 'default';
       this.routerMaxPrompt.clear();
+      this.routerMaxCache.clear();
       this.routerMaxCompletion.clear();
       if (!this.selectedID || !snapshot.providers.some((entry) => entry.id === this.selectedID)) {
         this.selectedID = this.defaultSelection();
@@ -285,6 +287,7 @@ export class ProviderPanel {
     this.routerError.clear();
     this.routerSort = 'default';
     this.routerMaxPrompt.clear();
+    this.routerMaxCache.clear();
     this.routerMaxCompletion.clear();
     this.expanded = new Set(this.draft.models.slice(0, 1).map((model) => model.key));
     // Load the list on open so the model dropdown is usable without a Fetch click.
@@ -312,6 +315,7 @@ export class ProviderPanel {
     this.routerError.clear();
     this.routerSort = 'default';
     this.routerMaxPrompt.clear();
+    this.routerMaxCache.clear();
     this.routerMaxCompletion.clear();
     this.expanded = new Set(this.draft.models.map((model) => model.key));
   }
@@ -333,6 +337,7 @@ export class ProviderPanel {
     this.routerError.clear();
     this.routerSort = 'default';
     this.routerMaxPrompt.clear();
+    this.routerMaxCache.clear();
     this.routerMaxCompletion.clear();
   }
 
@@ -554,6 +559,7 @@ export class ProviderPanel {
     this.routerSelection.set(modelKey, [...(model.routing?.slugs ?? [])]);
     this.routerFallback.set(modelKey, model.routing?.fallback ?? true);
     this.routerMaxPrompt.set(modelKey, model.routing?.maxPrompt ?? '');
+    this.routerMaxCache.set(modelKey, model.routing?.maxCache ?? '');
     this.routerMaxCompletion.set(modelKey, model.routing?.maxCompletion ?? '');
     this.paint();
     if (this.canFetchProviders(model)) void this.fetchProviders(modelKey);
@@ -566,6 +572,7 @@ export class ProviderPanel {
     this.routerSelection.delete(modelKey);
     this.routerFallback.delete(modelKey);
     this.routerMaxPrompt.delete(modelKey);
+    this.routerMaxCache.delete(modelKey);
     this.routerMaxCompletion.delete(modelKey);
     this.routerError.delete(modelKey);
   }
@@ -587,6 +594,7 @@ export class ProviderPanel {
     // order the model tries them in.
     const slugs = [...(this.routerSelection.get(modelKey) ?? [])];
     const maxPrompt = this.routerMaxPrompt.get(modelKey)?.trim() ?? '';
+    const maxCache = this.routerMaxCache.get(modelKey)?.trim() ?? '';
     const maxCompletion = this.routerMaxCompletion.get(modelKey)?.trim() ?? '';
     // Always a routing object: an empty selection is an explicit clear, so
     // the picker-owned fields leave the body while hand-written ones stay.
@@ -594,6 +602,7 @@ export class ProviderPanel {
       slugs,
       fallback: this.routerFallback.get(modelKey) ?? true,
       ...(maxPrompt !== '' && { maxPrompt }),
+      ...(maxCache !== '' && { maxCache }),
       ...(maxCompletion !== '' && { maxCompletion }),
     };
     if (this.errors.models) this.errors.models = undefined;
@@ -1492,10 +1501,8 @@ export class ProviderPanel {
       row.append(main);
 
       const meta = el('span', 'router-meta');
-      const prompt = span(meta, `${priceText(endpoint.pricing.prompt)} ${this.tr('routerIn')}`, 'router-fact');
-      prompt.title = this.tr('routerPriceInTitle');
-      const completion = span(meta, `${priceText(endpoint.pricing.completion)} ${this.tr('routerOut')}`, 'router-fact');
-      completion.title = this.tr('routerPriceOutTitle');
+      const price = span(meta, priceLine(endpoint.pricing), 'router-fact');
+      price.title = this.tr('routerPriceTitle');
       const speed = span(meta, throughputText(endpoint.throughputLast30m), 'router-fact');
       speed.title = this.tr('routerThroughputTitle');
       const latency = span(meta, latencyText(endpoint.latencyLast30m), 'router-fact');
@@ -1528,6 +1535,14 @@ export class ProviderPanel {
       placeholder: '0.5',
       onChange: (value) => {
         this.routerMaxPrompt.set(model.key, value);
+      },
+    }));
+    this.mounted.push(mountTextField(maxBlock, {
+      label: this.tr('routerMaxCache'),
+      value: this.routerMaxCache.get(model.key) ?? '',
+      placeholder: '0.05',
+      onChange: (value) => {
+        this.routerMaxCache.set(model.key, value);
       },
     }));
     this.mounted.push(mountTextField(maxBlock, {

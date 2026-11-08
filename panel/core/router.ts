@@ -43,6 +43,14 @@ export const priceText = (perToken: number | null): string => {
   return `$${value.toPrecision(2)}`;
 };
 
+/**
+ * One endpoint's prices on a single line, prompt/cache-read/completion:
+ * `$0.15/$0.03/$0.50`. A price the catalog omits stays `—`.
+ */
+export const priceLine = (pricing: RouterEndpoint['pricing']): string => (
+  [pricing.prompt, pricing.cacheRead, pricing.completion].map(priceText).join('/')
+);
+
 /** Output speed text: `47 tok/s`, `9.5 tok/s`, `—`. */
 export const throughputText = (tokensPerSecond: number | null): string => {
   if (tokensPerSecond === null || tokensPerSecond <= 0) return '—';

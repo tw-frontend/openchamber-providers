@@ -135,7 +135,8 @@ model ID gains a **Providers** button. It reads the public OpenRouter catalog on
 `openrouter.ai` (`GET /api/v1/models/{author}/{slug}/endpoints`) and lists every endpoint
 serving the model, with:
 
-- **Price** — prompt and completion dollars per million tokens (`$0.10 in · $0.32 out`)
+- **Price** — prompt, cache-read and completion dollars per million tokens on one line
+  (`$0.10/$0.03/$0.32`)
 - **Speed** — output tokens per second and time to first token, as measured over the
   last 30 minutes (dash when OpenRouter has no measurement yet)
 - **Uptime** and context window, plus the quantization (`fp8` …) and an `inactive` mark
@@ -172,10 +173,10 @@ request for that model:
 `only` restricts the router's provider pool to the picked endpoint slugs and `order`
 tries them in that order. The **Allow fallbacks** switch decides whether OpenRouter may
 still route to other providers when every picked one is unavailable; turn it off for a
-strict pin. Two optional **max price** fields cap the request (`max_price:
-{ prompt, completion }` in dollars per million tokens) so providers above the cap are
-skipped even without a slug selection. Clearing the selection removes the overlay and
-the model routes normally again.
+strict pin. Three optional **max price** fields cap the request (`max_price:
+{ prompt, input_cache_read, completion }` in dollars per million tokens) so providers
+above the cap are skipped even without a slug selection. Clearing the selection removes
+the overlay and the model routes normally again.
 
 Body keys the panel does not manage (a hand-written `data_collection`, `quantizations`
 or extra `max_price` keys) survive edits, and an endpoint slug list read from an
