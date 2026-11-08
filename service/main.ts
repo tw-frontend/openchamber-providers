@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import {
   modelCandidates,
   modelHeaders,
-  parseModelIDs,
+  parseModelOptions,
   endpointCandidates,
   modelPageCandidates,
   endpointHeaders,
@@ -24,6 +24,7 @@ import {
   dispatcherFor,
   httpFetch,
   type EndpointStat,
+  type ModelOption,
   type RouterEndpoint,
 } from './models';
 
@@ -147,9 +148,9 @@ const requestPayload = async (url: string, headers: Record<string, string>, prox
   }
 };
 
-const requestModels = async (url: string, protocol: string, apiKey: string): Promise<string[]> => {
+const requestModels = async (url: string, protocol: string, apiKey: string): Promise<ModelOption[]> => {
   const payload = await requestPayload(url, modelHeaders(protocol, apiKey));
-  const models = parseModelIDs(payload);
+  const models = parseModelOptions(payload);
   if (models.length === 0) {
     throw new ServiceError(502, 'The endpoint returned no model IDs.');
   }
@@ -168,7 +169,7 @@ const requestEndpointStats = async (url: string, proxy: string): Promise<Record<
   return parseEndpointStats(html);
 };
 
-const handleModels = async (body: string): Promise<string[]> => {
+const handleModels = async (body: string): Promise<ModelOption[]> => {
   let request: FetchRequest;
   try {
     request = JSON.parse(body) as FetchRequest;

@@ -103,6 +103,11 @@ URL does not already end in `/v1`. OpenAI-compatible protocols send
 `Authorization: Bearer …`; **Anthropic Messages** sends `x-api-key` and
 `anthropic-version`. The response may be an array, `{ data: [...] }` or `{ models: [...] }`.
 
+An OpenRouter-shaped answer also carries each model's Artificial Analysis scores. The
+dropdown then lists the strongest coding models first, shows the score beside the ID, and
+notes a routing variant (`:nitro`, `:floor`, `:free`, `:batch`) as the same model as its
+base, with the base model's score.
+
 The request is made by a small local service (`service/main.js`) that OpenChamber starts on
 demand and stops with the app. It listens only on `127.0.0.1`, requires the host's token, and
 keeps no key. If the extension was just updated, approve the local service in

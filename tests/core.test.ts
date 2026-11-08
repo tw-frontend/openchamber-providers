@@ -15,9 +15,10 @@ import { positiveInt } from '../panel/core/json';
 import { idFromName, uniqueIDFrom } from '../panel/core/provider';
 import { packageFrom, protocolOfPackage } from '../panel/core/protocols';
 import { validateDraft } from '../panel/core/validate';
-import { modelCandidates, modelHeaders, parseModelIDs } from '../service/models';
+import { modelCandidates, modelHeaders, parseModelIDs, parseModelOptions } from '../service/models';
 import { endpointCandidates, endpointHeaders, parseEndpoints } from '../service/models';
 import { modelPageCandidates, parseEndpointStats, mergeEndpointStats } from '../service/models';
+import { modelScoreText, sortModelOptions } from '../panel/core/modellist';
 import {
   contextText,
   isRouterBaseURL,
@@ -570,6 +571,64 @@ test('model IDs are read from the shapes gateways return', () => {
   assert.deepEqual(parseModelIDs({ models: ['c', { model: 'd' }] }), ['c', 'd']);
   assert.deepEqual(parseModelIDs(['e', { name: 'f' }]), ['e', 'f']);
   assert.deepEqual(parseModelIDs({ data: [] }), []);
+});
+
+test('model options carry the coding score, name and base of a variant', () => {
+  const payload = {
+    data: [
+      {
+        id: 'vendor/base',
+        name: 'Vendor Base',
+        benchmarks: { artificial_analysis: { coding_index: 71.5, intelligence_index: 80 } },
+      },
+      { id: 'vendor/base:nitro', name: 'Vendor Base (Nitro)' },
+      {
+        id: 'vendor/base:floor',
+        benchmarks: { artificial_analysis: { coding_index: null, intelligence_index: 64.2 } },
+      },
+      { id: 'vendor/idle', benchmarks: { artificial_analysis: { intelligence_index: 52 } } },
+      { id: 'vendor/plain' },
+      { id: 'vendor/base' },
+    ],
+  };
+  const options = parseModelOptions(payload);
+  assert.deepEqual(
+    options.map((option) => option.id),
+    ['vendor/base', 'vendor/base:nitro', 'vendor/base:floor', 'vendor/idle', 'vendor/plain'],
+  );
+  assert.equal(options[0].score, 71.5);
+  assert.equal(options[0].name, 'Vendor Base');
+  assert.equal(options[0].sameAs, undefined);
+  assert.equal(options[1].score, 71.5);
+  assert.equal(options[1].sameAs, 'vendor/base');
+  assert.equal(options[2].score, 64.2);
+  assert.equal(options[2].sameAs, 'vendor/base');
+  assert.equal(options[3].score, 52);
+  assert.equal(options[3].sameAs, undefined);
+  assert.equal(options[4].score, undefined);
+  assert.equal(options[4].sameAs, undefined);
+  // The shapes that carry no benchmarks keep their IDs only.
+  assert.deepEqual(
+    parseModelOptions(['plain', { model: 'other' }]).map((option) => [option.id, option.score]),
+    [['plain', undefined], ['other', undefined]],
+  );
+});
+
+test('the picker orders scored models first, strongest to weakest', () => {
+  const options = [
+    { id: 'b/unscored' },
+    { id: 'a/low', score: 40 },
+    { id: 'c/high', score: 71.5 },
+    { id: 'd/unscored' },
+    { id: 'e/tie', score: 40 },
+  ];
+  assert.deepEqual(
+    sortModelOptions(options).map((option) => option.id),
+    ['c/high', 'a/low', 'e/tie', 'b/unscored', 'd/unscored'],
+  );
+  assert.equal(modelScoreText(71.5), '71.5');
+  assert.equal(modelScoreText(70), '70');
+  assert.equal(modelScoreText(undefined), '—');
 });
 
 /* ----------------------------------------------------------- router catalog */

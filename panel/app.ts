@@ -35,7 +35,8 @@ import {
   type ProviderEntry,
 } from './core/provider';
 import { PROTOCOLS, packageLabel, type ProtocolId } from './core/protocols';
-import type { RouterEndpoint } from '../service/models';
+import type { ModelOption, RouterEndpoint } from '../service/models';
+import { modelScoreText, sortModelOptions } from './core/modellist';
 import {
   contextText,
   isRouterBaseURL,
@@ -78,7 +79,7 @@ export class ModelFetchError extends Error {
 }
 
 export type PanelHost = FileHost & ToastSink & {
-  fetchModels: (request: ModelFetchRequest) => Promise<string[]>;
+  fetchModels: (request: ModelFetchRequest) => Promise<ModelOption[]>;
   fetchProviders: (request: ProviderFetchRequest) => Promise<RouterEndpoint[]>;
 };
 
@@ -134,7 +135,7 @@ export class ProviderPanel {
   private expanded = new Set<string>();
   private detailScroll = 0;
 
-  private modelOptions: string[] = [];
+  private modelOptions: ModelOption[] = [];
   private fetchingModelKey: string | null = null;
   private manualModelIDs = new Set<string>();
 
@@ -1295,8 +1296,16 @@ export class ProviderPanel {
 
     if (useSelect) {
       const currentID = model.id.trim();
-      const options: SelectOption[] = this.modelOptions.map((id) => ({ id, label: id }));
-      if (currentID && !this.modelOptions.includes(currentID)) {
+      const ordered = sortModelOptions(this.modelOptions);
+      const options: SelectOption[] = ordered.map((option) => {
+        const entry: SelectOption = {
+          id: option.id,
+          label: option.score === undefined ? option.id : `${modelScoreText(option.score)} · ${option.id}`,
+        };
+        if (option.sameAs) entry.hint = fill(this.tr('modelSameAs'), { model: option.sameAs });
+        return entry;
+      });
+      if (currentID && !ordered.some((option) => option.id === currentID)) {
         options.unshift({ id: currentID, label: currentID, hint: this.tr('currentModel') });
       }
       options.push({ id: CUSTOM_MODEL_OPTION, label: this.tr('customModel') });

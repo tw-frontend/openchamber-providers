@@ -104,6 +104,80 @@ export const parseModelIDs = (payload: unknown): string[] => {
   return ids;
 };
 
+/* ------------------------------------------------------------- model options */
+
+/**
+ * One entry of the model picker: the routing ID, the provider's display name
+ * when it sends one, the coding score the catalog publishes for it, and — for
+ * a routing variant such as `:nitro` or `:floor` — the model it really serves.
+ */
+export type ModelOption = {
+  id: string;
+  name?: string;
+  /** Artificial Analysis coding index, falling back to its intelligence index. */
+  score?: number;
+  /** Base model ID when `id` carries a `:variant` suffix. */
+  sameAs?: string;
+};
+
+/** The model a `:variant` suffix (`:nitro`, `:floor`, `:free`, `:batch`) serves. */
+export const baseModelID = (id: string): string => {
+  const index = id.indexOf(':');
+  return index > 0 ? id.slice(0, index) : id;
+};
+
+/**
+ * Artificial Analysis scores the catalog attaches to an OpenRouter model.
+ * `coding_index` is the coding benchmark; `intelligence_index` covers the
+ * models it has not scored for coding yet. Both sit on the same 0–100 scale.
+ */
+const benchmarkScore = (item: unknown): number | undefined => {
+  if (!item || typeof item !== 'object') return undefined;
+  const benchmarks = (item as Record<string, unknown>).benchmarks;
+  if (!benchmarks || typeof benchmarks !== 'object') return undefined;
+  const analysis = (benchmarks as Record<string, unknown>).artificial_analysis;
+  if (!analysis || typeof analysis !== 'object') return undefined;
+  for (const key of ['coding_index', 'intelligence_index']) {
+    const value = (analysis as Record<string, unknown>)[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return undefined;
+};
+
+/** Model options from the shapes OpenAI, Anthropic and compatible gateways return. */
+export const parseModelOptions = (payload: unknown): ModelOption[] => {
+  const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(record.data)
+      ? record.data
+      : Array.isArray(record.models)
+        ? record.models
+        : [];
+  const options: ModelOption[] = [];
+  const byID = new Map<string, ModelOption>();
+  for (const item of list) {
+    const id = idOf(item);
+    if (!id || byID.has(id)) continue;
+    const option: ModelOption = { id };
+    const name = item && typeof item === 'object' ? (item as Record<string, unknown>).name : undefined;
+    if (typeof name === 'string' && name.trim()) option.name = name.trim();
+    const score = benchmarkScore(item);
+    if (score !== undefined) option.score = score;
+    byID.set(id, option);
+    options.push(option);
+  }
+  // `:nitro` and `:floor` route to the same model, so they carry its score and
+  // say which model that is.
+  for (const option of options) {
+    const base = baseModelID(option.id);
+    if (base === option.id) continue;
+    option.sameAs = base;
+    if (option.score === undefined) option.score = byID.get(base)?.score;
+  }
+  return options;
+};
+
 /* -------------------------------------------------------------- router endpoints */
 
 /**

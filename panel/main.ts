@@ -7,7 +7,7 @@ import { connectHost, HostRequestError } from '@openchamber/sdk';
 import { applyHostReady } from '@openchamber/sdk/ui';
 import { ModelFetchError, ProviderPanel } from './app';
 import { localeOf } from './i18n';
-import type { RouterEndpoint } from '../service/models';
+import type { ModelOption, RouterEndpoint } from '../service/models';
 
 const host = connectHost();
 const root = document.querySelector<HTMLElement>('#root');
@@ -51,7 +51,12 @@ const panel = new ProviderPanel(root, {
       throw new ModelFetchError('request', message);
     }
     return Array.isArray(body.models)
-      ? body.models.filter((item): item is string => typeof item === 'string')
+      ? body.models.filter((item): item is ModelOption => (
+          item !== null
+          && typeof item === 'object'
+          && typeof (item as ModelOption).id === 'string'
+          && (item as ModelOption).id !== ''
+        ))
       : [];
   },
   fetchProviders: async ({ modelID, proxy }) => {
