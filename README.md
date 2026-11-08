@@ -60,14 +60,15 @@ and paste the absolute path of the cloned folder into the same field.
 Every version is published as a [GitHub Release](https://github.com/tw-frontend/openchamber-providers/releases)
 with two assets:
 
-- `openchamber-providers-2.2.0.zip` — the extension folder, laid out for the **ZIP** install
-- `simra-openchamber-providers-2.2.0.tgz` — the npm package, for a registry or manual extraction
+- `openchamber-providers-<version>.zip` — the extension folder, laid out for the **ZIP** install
+- `simra-openchamber-providers-<version>.tgz` — the npm package, for a registry or manual extraction
 
-Download the ZIP and use **Settings → Extensions → ZIP**. Or unpack either archive and paste
-the folder that contains `package.json`, `panel/` and `service/` into the same field:
+`<version>` is the release tag, for example `2.2.1`. Download the ZIP and use
+**Settings → Extensions → ZIP**. Or unpack either archive and paste the folder that
+contains `package.json`, `panel/` and `service/` into the same field:
 
 ```bash
-tar -xzf simra-openchamber-providers-2.2.0.tgz   # creates ./package
+tar -xzf simra-openchamber-providers-<version>.tgz   # creates ./package
 ```
 
 The releases are the same build that CI checks: the committed `panel/main.js` and
