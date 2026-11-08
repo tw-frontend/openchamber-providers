@@ -287,6 +287,9 @@ export class ProviderPanel {
     this.routerMaxPrompt.clear();
     this.routerMaxCompletion.clear();
     this.expanded = new Set(this.draft.models.slice(0, 1).map((model) => model.key));
+    // Load the list on open so the model dropdown is usable without a Fetch click.
+    const firstKey = this.draft.models[0]?.key;
+    if (firstKey !== undefined && this.canFetchModels()) void this.fetchModels(firstKey, true);
   }
 
   private openNew(): void {
@@ -431,7 +434,7 @@ export class ProviderPanel {
     }
   }
 
-  private async fetchModels(modelKey: string): Promise<void> {
+  private async fetchModels(modelKey: string, quiet = false): Promise<void> {
     const draft = this.draft;
     if (!draft || this.busy || this.fetchingModelKey) return;
     const baseURL = draft.baseURL.trim();
@@ -457,10 +460,12 @@ export class ProviderPanel {
       }
       this.modelOptions = models;
       this.manualModelIDs.clear();
-      await this.host.toast({
-        kind: 'success',
-        message: fill(this.tr('fetchDone'), { count: String(models.length) }),
-      });
+      if (!quiet) {
+        await this.host.toast({
+          kind: 'success',
+          message: fill(this.tr('fetchDone'), { count: String(models.length) }),
+        });
+      }
     } catch (error) {
       if (this.draft !== draft) return;
       const message = error instanceof ModelFetchError && error.code === 'service'

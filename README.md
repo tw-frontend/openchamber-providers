@@ -21,6 +21,7 @@ unrelated settings are preserved byte for byte.
 - Provider ID, display name, API protocol, base URL and API key
 - Models with decimal context and output limits, upstream model ID, image input and tool calling
 - **Fetch** a provider's model list and pick the model ID from a dropdown, instead of typing it
+  (the list loads as soon as a provider is opened; **Fetch** reloads it)
 - **OpenRouter provider routing**: see every provider that serves a model — price per
   million tokens, throughput, latency and uptime, read live from the openrouter.ai
   catalog — and pick them in order, with optional per-request price caps
@@ -83,9 +84,9 @@ The releases are the same build that CI checks: the committed `panel/main.js` an
    accepts images and calls tools.
    Context length and max output may be left blank: no `limit` is written and OpenCode
    applies its own defaults, rather than baking in numbers that may be wrong.
-5. With the base URL and API key filled in, choose **Fetch** next to a model to load the
-   provider's model list, then pick the model ID from the dropdown. **Custom ID…** switches
-   back to free text.
+5. With the base URL and API key filled in, the provider's model list loads when the
+   provider is opened (and **Fetch** reloads it); pick the model ID from the dropdown.
+   **Custom ID…** switches back to free text.
 6. Choose **Save**. The block is written and the provider appears under
    **Settings → Providers**.
 
@@ -98,7 +99,9 @@ file, enter `{env:VAR_NAME}` (or `{file:path/to/secret}`) instead.
 ### Fetching models
 
 **Fetch** asks the provider for its model list and turns the model ID field into a
-searchable dropdown. It tries `{baseURL}/models`, then `{baseURL}/v1/models` when the base
+searchable dropdown. The list is fetched automatically when a provider draft opens, so the
+dropdown is ready without a click; **Fetch** reloads it on demand. It tries
+`{baseURL}/models`, then `{baseURL}/v1/models` when the base
 URL does not already end in `/v1`. OpenAI-compatible protocols send
 `Authorization: Bearer …`; **Anthropic Messages** sends `x-api-key` and
 `anthropic-version`. The response may be an array, `{ data: [...] }` or `{ models: [...] }`.
@@ -191,7 +194,8 @@ the override.
 Saving, editing and deleting make no network requests and send no prompts to an agent. The
 panel only reads and updates the OpenCode config files listed in its permission request.
 
-**Fetch** is the one network action. It goes through a local service the host starts on
+**Fetch** is the one network action, and it runs automatically when a provider draft opens.
+It goes through a local service the host starts on
 demand: the panel sends the base URL, API key and protocol to the service over the host's
 loopback proxy, and the service makes one `GET` request to the provider's model endpoint.
 The OpenRouter provider list works the same way with `POST /providers`: the service makes
