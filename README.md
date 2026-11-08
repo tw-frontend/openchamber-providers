@@ -19,7 +19,7 @@ unrelated settings are preserved byte for byte.
 
 - Add, edit and delete custom providers (third-party gateways, self-hosted runtimes)
 - Provider ID, display name, API protocol, base URL and API key
-- Models with decimal context and output limits, upstream model ID, image input and tool calling
+- Models with a display name separate from the model ID, decimal context and output limits, upstream model ID, image input and tool calling
 - **Fetch** a provider's model list and pick the model ID from a dropdown, instead of typing it
   (the list loads as soon as a provider is opened; **Fetch** reloads it)
 - **OpenRouter provider routing**: see every provider that serves a model — price per
@@ -80,7 +80,8 @@ The releases are the same build that CI checks: the committed `panel/main.js` an
 1. Open the panel on the rail, or **Extension pages → OpenChamber Providers** for full screen.
 2. Choose **Add provider**.
 3. Fill in the provider ID (e.g. `acme`), display name, API protocol, base URL and API key.
-4. Add at least one model: ID, context length, max output, reasoning levels, and whether it
+4. Add at least one model: ID, optional display name (shown in the OpenCode model picker
+   instead of the ID), context length, max output, reasoning levels, and whether it
    accepts images and calls tools.
    Context length and max output may be left blank: no `limit` is written and OpenCode
    applies its own defaults, rather than baking in numbers that may be wrong.

@@ -184,6 +184,36 @@ test('a renamed model drops a display name that only repeated the old ID', () =>
   assert.equal(model.name, undefined);
 });
 
+test('a custom display name is read and written back', () => {
+  const existing = { models: { 'z-ai/glm-5.3-flash:nitro': { name: 'GLM 5.3 Flash Nitro' } } };
+  const current = draftFrom({ id: 'openrouter', block: existing, file: 'x', overlay: false });
+  assert.equal(current.models[0]!.name, 'GLM 5.3 Flash Nitro');
+  const block = buildProvider(current, existing);
+  const model = (block.models as Record<string, Record<string, unknown>>)['z-ai/glm-5.3-flash:nitro']!;
+  assert.equal(model.name, 'GLM 5.3 Flash Nitro');
+});
+
+test('a new model keeps a custom display name different from its ID', () => {
+  const block = buildProvider(draft({ models: [{ ...emptyModel(), id: 'z-ai/glm-5.3:floor', name: 'GLM 5.3 Floor' }] }));
+  const model = (block.models as Record<string, Record<string, unknown>>)['z-ai/glm-5.3:floor']!;
+  assert.equal(model.name, 'GLM 5.3 Floor');
+});
+
+test('a model name equal to its ID is not written twice', () => {
+  const block = buildProvider(draft({ models: [{ ...emptyModel(), id: 'coder', name: 'coder' }] }));
+  const model = (block.models as Record<string, Record<string, unknown>>).coder!;
+  assert.equal(model.name, undefined);
+});
+
+test('clearing the display name removes it', () => {
+  const existing = { models: { coder: { name: 'Coder' } } };
+  const current = draftFrom({ id: 'acme', block: existing, file: 'x', overlay: false });
+  current.models[0]!.name = '';
+  const block = buildProvider(current, existing);
+  const model = (block.models as Record<string, Record<string, unknown>>).coder!;
+  assert.equal(model.name, undefined);
+});
+
 test('turning every level off declares reasoning unsupported', () => {
   const existing = { models: { coder: { capabilities: { reasoning: { supported: true, effort: ['low'] } } } } };
   const block = buildProvider(draft({ models: [{ ...emptyModel(), id: 'coder', levels: [], sourceID: 'coder' }] }), existing);

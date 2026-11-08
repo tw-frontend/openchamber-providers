@@ -1244,7 +1244,7 @@ export class ProviderPanel {
     });
     head.append(toggle);
 
-    const id = span(head, model.id.trim() || `#${index + 1}`, 'model-id');
+    const id = span(head, model.name.trim() || model.id.trim() || `#${index + 1}`, 'model-id');
     id.title = model.id.trim();
 
     const fetch = el('button', 'model-fetch', {
@@ -1374,6 +1374,14 @@ export class ProviderPanel {
     }
 
     this.mounted.push(mountTextField(fields, {
+      label: this.tr('modelName'),
+      value: model.name,
+      placeholder: model.id.trim() || 'GLM 5.3 Flash Nitro',
+      helper: this.tr('modelNameHint'),
+      onChange: (value) => { model.name = value; },
+    }));
+
+    this.mounted.push(mountTextField(fields, {
       label: this.tr('context'),
       value: model.context,
       placeholder: this.tr('limitPlaceholder'),
@@ -1388,9 +1396,9 @@ export class ProviderPanel {
     }));
 
     /*
-     * The ID is the only name this form needs: the config keeps whatever
-     * display name and upstream alias it already has, and OpenCode falls back
-     * to the ID for both.
+     * The display name is optional: OpenCode falls back to the ID, so an
+     * empty field writes no `name` and a value equal to the ID is not
+     * repeated. The upstream alias is carried untouched.
      */
     const levels = el('div', 'wide field-stack');
     const levelsLabel = el('div', 'mini-label');
