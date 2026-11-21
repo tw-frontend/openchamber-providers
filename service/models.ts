@@ -50,6 +50,40 @@ export const httpFetch = (
   init: Parameters<typeof undiciFetch>[1],
 ): ReturnType<typeof undiciFetch> => undiciFetch(url, init);
 
+/**
+ * Read a response body as text, keeping at most `limit` bytes: the reader is
+ * cancelled as soon as the body crosses the cap, so an oversized endpoint
+ * never fills memory and the transfer stops early. `overflow` says the cap
+ * was hit before the body ended. Decoding goes through TextDecoder, which
+ * strips a UTF-8 BOM the way `response.text()` does. A response without a
+ * stream (204, HEAD) falls back to `response.text()`.
+ */
+export const readCappedText = async (
+  response: { body: ReadableStream | null; text(): Promise<string> },
+  limit: number,
+): Promise<{ text: string; overflow: boolean }> => {
+  if (!response.body) return { text: await response.text(), overflow: false };
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = value as Uint8Array;
+    if (size + chunk.byteLength > limit) {
+      // Stop the transfer: an over-limit body is never used whole. The part
+      // that fits is kept, so a short prefix (an error-page hint) survives.
+      const room = limit - size;
+      if (room > 0) chunks.push(chunk.subarray(0, room));
+      await reader.cancel().catch(() => undefined);
+      return { text: new TextDecoder().decode(Buffer.concat(chunks)), overflow: true };
+    }
+    size += chunk.byteLength;
+    chunks.push(chunk);
+  }
+  return { text: new TextDecoder().decode(Buffer.concat(chunks)), overflow: false };
+};
+
 /** URL candidates for a provider's model list, in the order to try them. */
 export const modelCandidates = (baseURL: string): string[] => {
   const base = baseURL.trim().replace(/\/+$/, '');

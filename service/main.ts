@@ -23,6 +23,7 @@ import {
   mergeEndpointStats,
   dispatcherFor,
   httpFetch,
+  readCappedText,
   type EndpointStat,
   type ModelOption,
   type RouterEndpoint,
@@ -39,7 +40,9 @@ import bundledArena from './arena-snapshot.json';
 const PORT = Number(process.env.OPENCHAMBER_SERVICE_PORT ?? 0);
 const TOKEN = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
 const BODY_MAX = 64 * 1024;
-const RESPONSE_MAX = 2 * 1024 * 1024;
+const RESPONSE_MAX = 8 * 1024 * 1024;
+/** An error body is only a hint: keep its head, never the whole page. */
+const ERROR_BODY_MAX = 8 * 1024;
 const TIMEOUT_MS = 15_000;
 
 type FetchRequest = {
@@ -116,11 +119,10 @@ const requestText = async (url: string, headers: Record<string, string>, proxy =
       signal: controller.signal,
       dispatcher: dispatcherFor(url, proxy),
     });
-    const text = await response.text();
-    if (text.length > RESPONSE_MAX) {
-      throw new ServiceError(502, 'The endpoint response is too large.');
-    }
     if (!response.ok) {
+      // The status is the story; the body is only a short hint, and reading
+      // it capped keeps a huge error page from being buffered first.
+      const { text } = await readCappedText(response, ERROR_BODY_MAX);
       // Do not repeat an auth body: it can echo the key or account details.
       const detail = response.status === 401 || response.status === 403
         ? ''
@@ -129,6 +131,13 @@ const requestText = async (url: string, headers: Record<string, string>, proxy =
       throw new ServiceError(
         response.status === 401 || response.status === 403 ? 401 : 502,
         `HTTP ${response.status}${statusText}${detail ? `: ${detail}` : ''}`,
+      );
+    }
+    const { text, overflow } = await readCappedText(response, RESPONSE_MAX);
+    if (overflow) {
+      throw new ServiceError(
+        502,
+        `The endpoint response is too large (limit ${RESPONSE_MAX / (1024 * 1024)} MiB).`,
       );
     }
     return text;

@@ -15,7 +15,7 @@ import { positiveInt } from '../panel/core/json';
 import { idFromName, uniqueIDFrom } from '../panel/core/provider';
 import { packageFrom, protocolOfPackage } from '../panel/core/protocols';
 import { validateDraft } from '../panel/core/validate';
-import { modelCandidates, modelHeaders, parseModelIDs, parseModelOptions } from '../service/models';
+import { modelCandidates, modelHeaders, parseModelIDs, parseModelOptions, readCappedText } from '../service/models';
 import { endpointCandidates, endpointHeaders, parseEndpoints } from '../service/models';
 import { modelPageCandidates, parseEndpointStats, mergeEndpointStats } from '../service/models';
 import { sortModelOptions } from '../panel/core/modellist';
@@ -1169,5 +1169,72 @@ test('the -1 unset-pricing sentinel reads as no price', () => {
   // Neither a raw sentinel nor a normalized one may render as a bogus price.
   assert.equal(priceText(-1), '—');
   assert.equal(priceText(null), '—');
+});
+
+
+/* ------------------------------------------------------- capped body reader */
+
+const streamOf = (parts: Uint8Array[]): { stream: ReadableStream; cancelled: () => boolean } => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const part of parts) controller.enqueue(part);
+      controller.close();
+    },
+    cancel() { cancelled = true; },
+  });
+  return { stream, cancelled: () => cancelled };
+};
+
+const responseOf = (body: ReadableStream | null, text = '') => ({ body, text: async () => text });
+
+test('a small body is read whole', async () => {
+  const { stream } = streamOf([new TextEncoder().encode('{"data":[]}')]);
+  const result = await readCappedText(responseOf(stream), 1024);
+  assert.equal(result.overflow, false);
+  assert.equal(result.text, '{"data":[]}');
+});
+
+test('a body over the cap stops at the cap and is cancelled', async () => {
+  const encoder = new TextEncoder();
+  const { stream, cancelled } = streamOf([encoder.encode('abcde'), encoder.encode('fghij'), encoder.encode('klmno')]);
+  const result = await readCappedText(responseOf(stream), 5);
+  assert.equal(result.overflow, true);
+  assert.equal(result.text, 'abcde');
+  assert.equal(cancelled(), true);
+});
+
+test('a body exactly at the cap is not over it', async () => {
+  const { stream } = streamOf([new TextEncoder().encode('abcde')]);
+  const result = await readCappedText(responseOf(stream), 5);
+  assert.equal(result.overflow, false);
+  assert.equal(result.text, 'abcde');
+});
+
+test('a character split across chunks decodes', async () => {
+  const bytes = new TextEncoder().encode('中');
+  const { stream } = streamOf([bytes.slice(0, 1), bytes.slice(1)]);
+  const result = await readCappedText(responseOf(stream), 16);
+  assert.equal(result.overflow, false);
+  assert.equal(result.text, '中');
+});
+
+test('a missing body falls back to response.text()', async () => {
+  const result = await readCappedText(responseOf(null, 'fallback'), 16);
+  assert.deepEqual(result, { text: 'fallback', overflow: false });
+});
+
+test('an over-cap first chunk still yields the body prefix', async () => {
+  const { stream } = streamOf([new TextEncoder().encode('a'.repeat(1024))]);
+  const result = await readCappedText(responseOf(stream), 64);
+  assert.equal(result.overflow, true);
+  assert.equal(result.text.length, 64);
+});
+
+test('a UTF-8 BOM is not left in the text', async () => {
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf, 0x7b, 0x7d]);
+  const { stream } = streamOf([bom]);
+  const result = await readCappedText(responseOf(stream), 64);
+  assert.equal(result.text, '{}');
 });
 
